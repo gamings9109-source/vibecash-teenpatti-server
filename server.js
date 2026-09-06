@@ -320,6 +320,70 @@ app.get(
 );
 
 // =====================================================
+// FIREBASE CONNECTION TEST
+// =====================================================
+
+app.get(
+  "/testFirebase",
+  async (req, res) => {
+
+    try {
+
+      const testRef = db
+        .ref("global_teen_patti")
+        .child("server_test");
+
+      const data = {
+        ok: true,
+        message: "Render Firebase connection working",
+        time: Date.now()
+      };
+
+      await testRef.set(data);
+
+      const snapshot =
+        await testRef.once("value");
+
+      console.log(
+        "========== FIREBASE TEST =========="
+      );
+
+      console.log(
+        JSON.stringify(
+          snapshot.val(),
+          null,
+          2
+        )
+      );
+
+      console.log(
+        "===================================="
+      );
+
+      return res.status(200).json({
+        success: true,
+        firebase: true,
+        data: snapshot.val()
+      });
+
+    } catch (error) {
+
+      console.error(
+        "========== FIREBASE TEST ERROR =========="
+      );
+
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        firebase: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+// =====================================================
 // PLACE BET
 // =====================================================
 
