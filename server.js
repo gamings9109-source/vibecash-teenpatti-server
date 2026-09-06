@@ -326,9 +326,7 @@ app.get(
 app.get(
   "/testFirebase",
   async (req, res) => {
-
     try {
-
       const testRef = db
         .ref("global_teen_patti")
         .child("server_test");
@@ -340,40 +338,15 @@ app.get(
       };
 
       await testRef.set(data);
-
-      const snapshot =
-        await testRef.once("value");
-
-      console.log(
-        "========== FIREBASE TEST =========="
-      );
-
-      console.log(
-        JSON.stringify(
-          snapshot.val(),
-          null,
-          2
-        )
-      );
-
-      console.log(
-        "===================================="
-      );
+      const snapshot = await testRef.once("value");
 
       return res.status(200).json({
         success: true,
         firebase: true,
         data: snapshot.val()
       });
-
     } catch (error) {
-
-      console.error(
-        "========== FIREBASE TEST ERROR =========="
-      );
-
-      console.error(error);
-
+      console.error("FIREBASE TEST ERROR:", error);
       return res.status(500).json({
         success: false,
         firebase: false,
@@ -392,16 +365,6 @@ app.post(
   async (req, res) => {
     try {
       const { uid, side, amount, roundId } = req.body;
-      console.log("========== PLACE BET ==========");
-      console.log("uid:", uid);
-      console.log("side:", side);
-      console.log("amount:", amount);
-      console.log("roundId:", roundId);
-      console.log("================================");
-
-      // -----------------------------------------
-      // VALIDATION
-      // -----------------------------------------
       if (!uid || side === undefined || amount === undefined || !roundId) {
         return res.status(400).json({ success: false, error: "Invalid bet data" });
       }
@@ -421,17 +384,11 @@ app.post(
         return res.status(400).json({ success: false, error: "Invalid amount" });
       }
 
-      // -----------------------------------------
-      // ROUND ID
-      // -----------------------------------------
       const roundNumber = Number(roundId);
       if (!Number.isFinite(roundNumber) || roundNumber <= 0) {
         return res.status(400).json({ success: false, error: "Invalid roundId" });
       }
 
-      // -----------------------------------------
-      // BETTING TIME
-      // -----------------------------------------
       const startTime = roundNumber * ROUND_TOTAL_MS;
       const elapsed = Date.now() - startTime;
 
@@ -439,9 +396,6 @@ app.post(
         return res.status(400).json({ success: false, error: "Betting is closed" });
       }
 
-      // -----------------------------------------
-      // BET ACKNOWLEDGEMENT
-      // -----------------------------------------
       return res.status(200).json({
         success: true,
         message: "Bet placed successfully",
@@ -458,35 +412,20 @@ app.post(
 
 // =====================================================
 // GET TEEN PATTI ROUND
-// IMPORTANT: ANDROID USES POST
 // =====================================================
 
 app.post(
   "/getTeenPattiRound",
   async (req, res) => {
     try {
-      console.log("=================================");
-      console.log("GET ROUND REQUEST");
-      console.log("BODY:", JSON.stringify(req.body));
-      console.log("SERVER TIME:", Date.now());
-      console.log("=================================");
-
-      // -----------------------------------------
-      // READ ROUND ID
-      // -----------------------------------------
       const roundId = String(req.body.roundId || "").trim();
 
-      // -----------------------------------------
-      // VALIDATE ROUND ID
-      // -----------------------------------------
       if (!roundId) {
-        console.error("ROUND ID MISSING");
         return res.status(400).json({ success: false, error: "roundId required" });
       }
 
       const roundNumber = Number(roundId);
       if (!Number.isFinite(roundNumber) || roundNumber <= 0) {
-        console.error("INVALID ROUND ID:", roundId);
         return res.status(400).json({ success: false, error: "Invalid roundId" });
       }
 
@@ -494,30 +433,16 @@ app.post(
       const now = Date.now();
       const elapsed = now - startTime;
 
-      console.log("ROUND ID:", roundId);
-      console.log("ROUND START:", startTime);
-      console.log("SERVER NOW:", now);
-      console.log("ELAPSED:", elapsed);
-
-      // -----------------------------------------
-      // FIREBASE ROUND REFERENCE
-      // -----------------------------------------
       const roundRef = db
         .ref("global_teen_patti")
         .child("rounds")
         .child(roundId);
 
-      // -----------------------------------------
-      // READ EXISTING RESULT
-      // -----------------------------------------
       const existingSnapshot = await roundRef.once("value");
       const existing = existingSnapshot.val();
 
-      // -----------------------------------------
-      // IF RESULT ALREADY EXISTS
-      // -----------------------------------------
+      // Agar result pehle se stored hai, turant return karo
       if (isValidRoundResult(existing)) {
-        console.log("EXISTING ROUND RESULT FOUND");
         const response = {
           success: true,
           roundId: roundId,
@@ -534,13 +459,9 @@ app.post(
         return res.status(200).json(response);
       }
 
-      // -----------------------------------------
-      // BETTING OPEN
-      // -----------------------------------------
-      if (elapsed < BETTING_MS) {
+      // Agar betting time chal raha hai (aur existing cards nahi hain)
+      if (elapsed < BETTING_MS && !existing) {
         const remainingMs = Math.max(0, BETTING_MS - elapsed);
-        console.log("BETTING OPEN");
-        console.log("REMAINING MS:", remainingMs);
         return res.status(200).json({
           success: true,
           roundId: roundId,
@@ -552,10 +473,7 @@ app.post(
         });
       }
 
-      // -----------------------------------------
-      // BETTING CLOSED (AUTO GENERATE & SAVE)
-      // -----------------------------------------
-      console.log("BETTING CLOSED - GENERATING CARDS");
+      // Betting khatam ho chuki hai, cards generate karo aur save karo
       const generated = createRoundResult();
 
       await roundRef.transaction(current => {
@@ -575,7 +493,6 @@ app.post(
       const finalRound = finalSnapshot.val();
 
       if (!isValidRoundResult(finalRound)) {
-        console.error("INVALID FINAL ROUND");
         return res.status(500).json({ success: false, error: "Round result could not be created" });
       }
 
@@ -593,16 +510,10 @@ app.post(
         generatedAt: Number(finalRound.generatedAt || 0)
       };
 
-      console.log("========== RESULT SENT ==========");
-      console.log(JSON.stringify(response, null, 2));
-      console.log("=================================");
       return res.status(200).json(response);
 
     } catch (error) {
-      console.error("=================================");
-      console.error("GET ROUND ERROR");
-      console.error(error);
-      console.error("=================================");
+      console.error("GET ROUND ERROR:", error);
       return res.status(500).json({ success: false, error: error.message || "Server error" });
     }
   }
@@ -617,9 +528,6 @@ app.post(
   async (req, res) => {
     try {
       const { roundId } = req.body;
-      console.log("========== SETTLE ROUND ==========");
-      console.log("roundId:", roundId);
-      console.log("==================================");
       if (!roundId) {
         return res.status(400).json({ success: false, error: "roundId required" });
       }
@@ -632,28 +540,20 @@ app.post(
 );
 
 // =====================================================
-// 404
+// 404 & ERROR HANDLERS
 // =====================================================
 
-app.use(
-  (req, res) => {
-    res.status(404).json({ success: false, error: "Endpoint not found", path: req.path });
+app.use((req, res) => {
+  res.status(404).json({ success: false, error: "Endpoint not found", path: req.path });
+});
+
+app.use((error, req, res, next) => {
+  console.log("GLOBAL ERROR:", error);
+  if (res.headersSent) {
+    return next(error);
   }
-);
-
-// =====================================================
-// GLOBAL ERROR HANDLER
-// =====================================================
-
-app.use(
-  (error, req, res, next) => {
-    console.error("GLOBAL ERROR:", error);
-    if (res.headersSent) {
-      return next(error);
-    }
-    res.status(500).json({ success: false, error: error.message || "Server error" });
-  }
-);
+  res.status(500).json({ success: false, error: error.message || "Server error" });
+});
 
 // =====================================================
 // START SERVER
@@ -662,56 +562,6 @@ app.use(
 const PORT = Number(process.env.PORT) || 10000;
 const HOST = "0.0.0.0";
 
-const server = app.listen(
-  PORT,
-  HOST,
-  () => {
-    console.log("=================================");
-    console.log("VIBECASH TEEN PATTI SERVER");
-    console.log("STATUS: ONLINE");
-    console.log("HOST:", HOST);
-    console.log("PORT:", PORT);
-    console.log("ROUND_TOTAL_MS:", ROUND_TOTAL_MS);
-    console.log("BETTING_MS:", BETTING_MS);
-    console.log("FIREBASE_DATABASE_URL:", FIREBASE_DATABASE_URL ? "CONFIGURED" : "MISSING");
-    console.log("=================================");
-  }
-);
-
-// =====================================================
-// SERVER ERROR
-// =====================================================
-
-server.on(
-  "error",
-  error => {
-    console.error("SERVER LISTEN ERROR:", error);
-    process.exit(1);
-  }
-);
-
-// =====================================================
-// GRACEFUL SHUTDOWN
-// =====================================================
-
-process.on(
-  "SIGTERM",
-  () => {
-    console.log("SIGTERM received.");
-    server.close(() => {
-      console.log("Server closed.");
-      process.exit(0);
-    });
-  }
-);
-
-process.on(
-  "SIGINT",
-  () => {
-    console.log("SIGINT received.");
-    server.close(() => {
-      console.log("Server closed.");
-      process.exit(0);
-    });
-  }
-);
+const server = app.listen(PORT, HOST, () => {
+  console.log("VIBECASH TEEN PATTI SERVER ONLINE ON PORT:", PORT);
+});
