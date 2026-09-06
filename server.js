@@ -4,11 +4,23 @@ const admin = require("firebase-admin");
 const crypto = require("crypto");
 
 // =====================================================
-// FIREBASE
+// FIREBASE INITIALIZATION
 // =====================================================
 
+const FIREBASE_DATABASE_URL =
+    process.env.FIREBASE_DATABASE_URL;
+
+if (!FIREBASE_DATABASE_URL) {
+
+    console.error(
+        "ERROR: FIREBASE_DATABASE_URL environment variable is missing."
+    );
+
+    process.exit(1);
+}
+
 admin.initializeApp({
-    databaseURL: process.env.FIREBASE_DATABASE_URL
+    databaseURL: FIREBASE_DATABASE_URL
 });
 
 const db = admin.database();
@@ -20,7 +32,12 @@ const db = admin.database();
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+
+app.use(
+    express.json({
+        limit: "1mb"
+    })
+);
 
 // =====================================================
 // TEEN PATTI SETTINGS
@@ -29,27 +46,70 @@ app.use(express.json());
 const ROUND_TOTAL_MS = 23400;
 const BETTING_MS = 17000;
 
-// Seats:
 // 1 = A
 // 2 = B
 // 3 = C
 
-const SUITS = ["♠", "♥", "♦", "♣"];
+const SUITS = [
+    "♠",
+    "♥",
+    "♦",
+    "♣"
+];
 
 const RANKS = [
-    { name: "2", value: 2 },
-    { name: "3", value: 3 },
-    { name: "4", value: 4 },
-    { name: "5", value: 5 },
-    { name: "6", value: 6 },
-    { name: "7", value: 7 },
-    { name: "8", value: 8 },
-    { name: "9", value: 9 },
-    { name: "10", value: 10 },
-    { name: "J", value: 11 },
-    { name: "Q", value: 12 },
-    { name: "K", value: 13 },
-    { name: "A", value: 14 }
+    {
+        name: "2",
+        value: 2
+    },
+    {
+        name: "3",
+        value: 3
+    },
+    {
+        name: "4",
+        value: 4
+    },
+    {
+        name: "5",
+        value: 5
+    },
+    {
+        name: "6",
+        value: 6
+    },
+    {
+        name: "7",
+        value: 7
+    },
+    {
+        name: "8",
+        value: 8
+    },
+    {
+        name: "9",
+        value: 9
+    },
+    {
+        name: "10",
+        value: 10
+    },
+    {
+        name: "J",
+        value: 11
+    },
+    {
+        name: "Q",
+        value: 12
+    },
+    {
+        name: "K",
+        value: 13
+    },
+    {
+        name: "A",
+        value: 14
+    }
 ];
 
 // =====================================================
@@ -58,7 +118,10 @@ const RANKS = [
 
 function secureRandom(max) {
 
-    return crypto.randomInt(0, max);
+    return crypto.randomInt(
+        0,
+        max
+    );
 }
 
 // =====================================================
@@ -74,8 +137,11 @@ function createDeck() {
         for (const rank of RANKS) {
 
             deck.push({
+
                 rank: rank.name,
+
                 value: rank.value,
+
                 suit: suit
             });
         }
@@ -85,46 +151,61 @@ function createDeck() {
 }
 
 // =====================================================
-// SHUFFLE DECK
+// SHUFFLE
 // =====================================================
 
 function shuffleDeck(deck) {
 
-    const result = [...deck];
+    const shuffled = [
+        ...deck
+    ];
 
-    for (let i = result.length - 1; i > 0; i--) {
+    for (
+        let i = shuffled.length - 1;
+        i > 0;
+        i--
+    ) {
 
-        const j = secureRandom(i + 1);
+        const j =
+            secureRandom(i + 1);
 
-        const temp = result[i];
+        const temp =
+            shuffled[i];
 
-        result[i] = result[j];
-        result[j] = temp;
+        shuffled[i] =
+            shuffled[j];
+
+        shuffled[j] =
+            temp;
     }
 
-    return result;
+    return shuffled;
 }
 
 // =====================================================
-// HAND EVALUATION
-//
-// Trail          = 6
-// Straight Flush = 5
-// Flush          = 4
-// Straight       = 3
-// Pair           = 2
-// High Card      = 1
+// EVALUATE HAND
 // =====================================================
 
 function evaluateHand(cards) {
 
     const values = cards
-        .map(card => Number(card.value))
-        .sort((a, b) => b - a);
+        .map(
+            card =>
+                Number(card.value)
+        )
+        .sort(
+            (a, b) =>
+                b - a
+        );
 
-    const suits = cards.map(card => card.suit);
+    const suits =
+        cards.map(
+            card =>
+                card.suit
+        );
 
     const sameSuit =
+        suits.length === 3 &&
         suits[0] === suits[1] &&
         suits[1] === suits[2];
 
@@ -143,12 +224,19 @@ function evaluateHand(cards) {
     // TRAIL
     // =================================================
 
-    if (countValues.includes(3)) {
+    if (
+        countValues.includes(3)
+    ) {
 
         return {
+
             name: "Trail",
+
             rank: 6,
-            tie: [values[0]]
+
+            tie: [
+                values[0]
+            ]
         };
     }
 
@@ -156,9 +244,11 @@ function evaluateHand(cards) {
     // STRAIGHT
     // =================================================
 
-    let straight = false;
+    let straight =
+        false;
 
-    let straightHigh = values[0];
+    let straightHigh =
+        values[0];
 
     // A-2-3
     if (
@@ -167,26 +257,39 @@ function evaluateHand(cards) {
         values[2] === 2
     ) {
 
-        straight = true;
-        straightHigh = 3;
+        straight =
+            true;
+
+        straightHigh =
+            3;
 
     } else {
 
         straight =
-            values[0] === values[1] + 1 &&
-            values[1] === values[2] + 1;
+            values[0] ===
+                values[1] + 1 &&
+            values[1] ===
+                values[2] + 1;
     }
 
     // =================================================
     // STRAIGHT FLUSH
     // =================================================
 
-    if (straight && sameSuit) {
+    if (
+        straight &&
+        sameSuit
+    ) {
 
         return {
+
             name: "Straight Flush",
+
             rank: 5,
-            tie: [straightHigh]
+
+            tie: [
+                straightHigh
+            ]
         };
     }
 
@@ -197,8 +300,11 @@ function evaluateHand(cards) {
     if (sameSuit) {
 
         return {
+
             name: "Flush",
+
             rank: 4,
+
             tie: values
         };
     }
@@ -210,9 +316,14 @@ function evaluateHand(cards) {
     if (straight) {
 
         return {
+
             name: "Straight",
+
             rank: 3,
-            tie: [straightHigh]
+
+            tie: [
+                straightHigh
+            ]
         };
     }
 
@@ -220,29 +331,50 @@ function evaluateHand(cards) {
     // PAIR
     // =================================================
 
-    if (countValues.includes(2)) {
+    if (
+        countValues.includes(2)
+    ) {
 
-        let pairValue = 0;
-        let kicker = 0;
+        let pairValue =
+            0;
 
-        for (const value of values) {
+        let kicker =
+            0;
 
-            if (counts[value] === 2) {
+        for (
+            const value of values
+        ) {
+
+            if (
+                counts[value] === 2
+            ) {
 
                 pairValue =
-                    Math.max(pairValue, value);
+                    Math.max(
+                        pairValue,
+                        value
+                    );
 
             } else {
 
                 kicker =
-                    Math.max(kicker, value);
+                    Math.max(
+                        kicker,
+                        value
+                    );
             }
         }
 
         return {
+
             name: "Pair",
+
             rank: 2,
-            tie: [pairValue, kicker]
+
+            tie: [
+                pairValue,
+                kicker
+            ]
         };
     }
 
@@ -251,8 +383,11 @@ function evaluateHand(cards) {
     // =================================================
 
     return {
+
         name: "High Card",
+
         rank: 1,
+
         tie: values
     };
 }
@@ -263,9 +398,15 @@ function evaluateHand(cards) {
 
 function compareHands(a, b) {
 
-    if (a.rank !== b.rank) {
+    if (
+        a.rank !== b.rank
+    ) {
 
-        return a.rank > b.rank ? 1 : -1;
+        return (
+            a.rank > b.rank
+                ? 1
+                : -1
+        );
     }
 
     const length =
@@ -274,14 +415,27 @@ function compareHands(a, b) {
             b.tie.length
         );
 
-    for (let i = 0; i < length; i++) {
+    for (
+        let i = 0;
+        i < length;
+        i++
+    ) {
 
-        const av = a.tie[i] || 0;
-        const bv = b.tie[i] || 0;
+        const av =
+            a.tie[i] || 0;
 
-        if (av !== bv) {
+        const bv =
+            b.tie[i] || 0;
 
-            return av > bv ? 1 : -1;
+        if (
+            av !== bv
+        ) {
+
+            return (
+                av > bv
+                    ? 1
+                    : -1
+            );
         }
     }
 
@@ -295,47 +449,67 @@ function compareHands(a, b) {
 function createRoundResult() {
 
     const deck =
-        shuffleDeck(createDeck());
+        shuffleDeck(
+            createDeck()
+        );
 
     // =================================================
     // EXACTLY 9 UNIQUE CARDS
     // =================================================
 
     const cardsA =
-        deck.slice(0, 3);
+        deck.slice(
+            0,
+            3
+        );
 
     const cardsB =
-        deck.slice(3, 6);
+        deck.slice(
+            3,
+            6
+        );
 
     const cardsC =
-        deck.slice(6, 9);
+        deck.slice(
+            6,
+            9
+        );
 
     // =================================================
     // EVALUATE
     // =================================================
 
     const handA =
-        evaluateHand(cardsA);
+        evaluateHand(
+            cardsA
+        );
 
     const handB =
-        evaluateHand(cardsB);
+        evaluateHand(
+            cardsB
+        );
 
     const handC =
-        evaluateHand(cardsC);
+        evaluateHand(
+            cardsC
+        );
 
     // =================================================
     // FIND WINNER
     // =================================================
 
     const hands = [
+
         {
             seat: 1,
             hand: handA
         },
+
         {
             seat: 2,
             hand: handB
         },
+
         {
             seat: 3,
             hand: handC
@@ -345,7 +519,11 @@ function createRoundResult() {
     let winner =
         hands[0];
 
-    for (let i = 1; i < hands.length; i++) {
+    for (
+        let i = 1;
+        i < hands.length;
+        i++
+    ) {
 
         const comparison =
             compareHands(
@@ -353,16 +531,14 @@ function createRoundResult() {
                 winner.hand
             );
 
-        if (comparison > 0) {
+        if (
+            comparison > 0
+        ) {
 
             winner =
                 hands[i];
         }
     }
-
-    // =================================================
-    // RESULT
-    // =================================================
 
     return {
 
@@ -385,7 +561,9 @@ function createRoundResult() {
         },
 
         winner:
-            Number(winner.seat),
+            Number(
+                winner.seat
+            ),
 
         generatedAt:
             Date.now()
@@ -393,7 +571,7 @@ function createRoundResult() {
 }
 
 // =====================================================
-// VALIDATE RESULT
+// VALIDATE ROUND RESULT
 // =====================================================
 
 function isValidRoundResult(round) {
@@ -406,34 +584,57 @@ function isValidRoundResult(round) {
         return false;
     }
 
-    if (!Array.isArray(round.cards.A)) {
-        return false;
-    }
-
-    if (!Array.isArray(round.cards.B)) {
-        return false;
-    }
-
-    if (!Array.isArray(round.cards.C)) {
-        return false;
-    }
-
-    if (round.cards.A.length !== 3) {
-        return false;
-    }
-
-    if (round.cards.B.length !== 3) {
-        return false;
-    }
-
-    if (round.cards.C.length !== 3) {
+    if (
+        !Array.isArray(
+            round.cards.A
+        )
+    ) {
         return false;
     }
 
     if (
-        Number(round.winner) !== 1 &&
-        Number(round.winner) !== 2 &&
-        Number(round.winner) !== 3
+        !Array.isArray(
+            round.cards.B
+        )
+    ) {
+        return false;
+    }
+
+    if (
+        !Array.isArray(
+            round.cards.C
+        )
+    ) {
+        return false;
+    }
+
+    if (
+        round.cards.A.length !== 3
+    ) {
+        return false;
+    }
+
+    if (
+        round.cards.B.length !== 3
+    ) {
+        return false;
+    }
+
+    if (
+        round.cards.C.length !== 3
+    ) {
+        return false;
+    }
+
+    const winner =
+        Number(
+            round.winner
+        );
+
+    if (
+        winner !== 1 &&
+        winner !== 2 &&
+        winner !== 3
     ) {
         return false;
     }
@@ -445,68 +646,104 @@ function isValidRoundResult(round) {
 // HEALTH CHECK
 // =====================================================
 
-app.get("/", (req, res) => {
+app.get(
+    "/",
+    (req, res) => {
 
-    res.status(200).send(
-        "VibeCash Teen Patti Server OK"
-    );
-});
+        res.status(200).send(
+            "VibeCash Teen Patti Server OK"
+        );
+    }
+);
 
 // =====================================================
-// TEST ROUND
-//
-// Browser se test karne ke liye:
-// /testRound
+// SERVER TIME TEST
 // =====================================================
 
-app.get("/testRound", (req, res) => {
+app.get(
+    "/health",
+    (req, res) => {
 
-    try {
-
-        const result =
-            createRoundResult();
-
-        console.log(
-            "========== TEST ROUND =========="
-        );
-
-        console.log(
-            JSON.stringify(result)
-        );
-
-        console.log(
-            "================================"
-        );
-
-        return res.status(200).json({
+        res.status(200).json({
 
             success: true,
 
-            cards: result.cards,
+            server: "online",
 
-            hands: result.hands,
+            time: Date.now(),
 
-            winner: result.winner,
+            roundTotalMs:
+                ROUND_TOTAL_MS,
 
-            generatedAt:
-                result.generatedAt
-        });
-
-    } catch (error) {
-
-        console.error(
-            "TEST ROUND ERROR:",
-            error
-        );
-
-        return res.status(500).json({
-
-            success: false,
-
-            error: error.message
+            bettingMs:
+                BETTING_MS
         });
     }
-});
+);
+
+// =====================================================
+// TEST CARD GENERATION
+// =====================================================
+
+app.get(
+    "/testRound",
+    (req, res) => {
+
+        try {
+
+            const result =
+                createRoundResult();
+
+            console.log(
+                "========== TEST ROUND =========="
+            );
+
+            console.log(
+                JSON.stringify(
+                    result,
+                    null,
+                    2
+                )
+            );
+
+            console.log(
+                "================================"
+            );
+
+            return res.status(200).json({
+
+                success: true,
+
+                cards:
+                    result.cards,
+
+                hands:
+                    result.hands,
+
+                winner:
+                    result.winner,
+
+                generatedAt:
+                    result.generatedAt
+            });
+
+        } catch (error) {
+
+            console.error(
+                "TEST ROUND ERROR:",
+                error
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                error:
+                    error.message
+            });
+        }
+    }
+);
 
 // =====================================================
 // PLACE BET
@@ -580,8 +817,12 @@ app.post(
                 Number(amount);
 
             if (
-                !Number.isFinite(sideNumber) ||
-                !Number.isFinite(amountNumber)
+                !Number.isFinite(
+                    sideNumber
+                ) ||
+                !Number.isFinite(
+                    amountNumber
+                )
             ) {
 
                 return res.status(400).json({
@@ -607,7 +848,9 @@ app.post(
                 });
             }
 
-            if (amountNumber <= 0) {
+            if (
+                amountNumber <= 0
+            ) {
 
                 return res.status(400).json({
 
@@ -619,10 +862,55 @@ app.post(
             }
 
             // -----------------------------------------
+            // BETTING TIME CHECK
+            // -----------------------------------------
+
+            const roundNumber =
+                Number(roundId);
+
+            if (
+                !Number.isFinite(
+                    roundNumber
+                ) ||
+                roundNumber <= 0
+            ) {
+
+                return res.status(400).json({
+
+                    success: false,
+
+                    error:
+                        "Invalid roundId"
+                });
+            }
+
+            const startTime =
+                roundNumber *
+                ROUND_TOTAL_MS;
+
+            const elapsed =
+                Date.now() -
+                startTime;
+
+            if (
+                elapsed < 0 ||
+                elapsed >= BETTING_MS
+            ) {
+
+                return res.status(400).json({
+
+                    success: false,
+
+                    error:
+                        "Betting is closed"
+                });
+            }
+
+            // -----------------------------------------
             // IMPORTANT
             //
-            // Existing Firebase demand/bet logic
-            // yahan intentionally replace nahi kiya.
+            // Existing client/Firebase demand logic
+            // is not changed here.
             // -----------------------------------------
 
             return res.status(200).json({
@@ -639,13 +927,15 @@ app.post(
                     amountNumber,
 
                 roundId:
-                    String(roundId)
+                    String(
+                        roundId
+                    )
             });
 
         } catch (error) {
 
             console.error(
-                "placeTeenPattiBet ERROR:",
+                "PLACE BET ERROR:",
                 error
             );
 
@@ -679,12 +969,14 @@ app.post(
             );
 
             console.log(
-                "Body:",
-                JSON.stringify(req.body)
+                "BODY:",
+                JSON.stringify(
+                    req.body
+                )
             );
 
             console.log(
-                "Server time:",
+                "SERVER TIME:",
                 Date.now()
             );
 
@@ -697,7 +989,7 @@ app.post(
             } = req.body;
 
             // -----------------------------------------
-            // VALIDATE ROUND ID
+            // VALIDATE
             // -----------------------------------------
 
             if (!roundId) {
@@ -712,13 +1004,19 @@ app.post(
             }
 
             const id =
-                String(roundId);
+                String(
+                    roundId
+                );
 
             const roundNumber =
-                Number(roundId);
+                Number(
+                    roundId
+                );
 
             if (
-                !Number.isFinite(roundNumber) ||
+                !Number.isFinite(
+                    roundNumber
+                ) ||
                 roundNumber <= 0
             ) {
 
@@ -732,19 +1030,23 @@ app.post(
             }
 
             // -----------------------------------------
-            // FIREBASE ROUND REF
+            // FIREBASE ROUND
             // -----------------------------------------
 
             const roundRef =
                 db
-                    .ref("global_teen_patti")
-                    .child("rounds")
-                    .child(id);
+                    .ref(
+                        "global_teen_patti"
+                    )
+                    .child(
+                        "rounds"
+                    )
+                    .child(
+                        id
+                    );
 
             // -----------------------------------------
-            // IMPORTANT ROUND TIME FIX
-            //
-            // Android:
+            // ANDROID ROUND ID FORMULA
             //
             // roundId =
             // floor(currentTime / 23400)
@@ -763,7 +1065,8 @@ app.post(
                 Date.now();
 
             const elapsed =
-                now - startTime;
+                now -
+                startTime;
 
             console.log(
                 "roundId:",
@@ -771,12 +1074,12 @@ app.post(
             );
 
             console.log(
-                "round start:",
+                "startTime:",
                 startTime
             );
 
             console.log(
-                "current time:",
+                "now:",
                 now
             );
 
@@ -790,34 +1093,25 @@ app.post(
             // -----------------------------------------
 
             const existingSnapshot =
-                await roundRef.once("value");
+                await roundRef.once(
+                    "value"
+                );
 
             const existing =
                 existingSnapshot.val();
 
-            console.log(
-                "Existing round:",
-                existing
-                    ? JSON.stringify(existing)
-                    : "NONE"
-            );
-
             // -----------------------------------------
-            // RESULT ALREADY EXISTS
+            // EXISTING RESULT
             // -----------------------------------------
 
             if (
-                isValidRoundResult(existing)
+                isValidRoundResult(
+                    existing
+                )
             ) {
 
                 console.log(
                     "EXISTING RESULT FOUND"
-                );
-
-                console.log(
-                    JSON.stringify(
-                        existing
-                    )
                 );
 
                 return res.status(200).json({
@@ -842,8 +1136,10 @@ app.post(
                         ),
 
                     generatedAt:
-                        existing.generatedAt ||
-                        0
+                        Number(
+                            existing.generatedAt ||
+                            0
+                        )
                 });
             }
 
@@ -851,9 +1147,11 @@ app.post(
             // BETTING OPEN
             // -----------------------------------------
 
-            if (elapsed < BETTING_MS) {
+            if (
+                elapsed < BETTING_MS
+            ) {
 
-                const remaining =
+                const remainingMs =
                     Math.max(
                         0,
                         BETTING_MS -
@@ -865,8 +1163,8 @@ app.post(
                 );
 
                 console.log(
-                    "Remaining:",
-                    remaining
+                    "remainingMs:",
+                    remainingMs
                 );
 
                 return res.status(200).json({
@@ -880,7 +1178,7 @@ app.post(
                         true,
 
                     remainingMs:
-                        remaining,
+                        remainingMs,
 
                     cards:
                         null,
@@ -914,19 +1212,19 @@ app.post(
 
             console.log(
                 JSON.stringify(
-                    generated
+                    generated,
+                    null,
+                    2
                 )
             );
 
             // -----------------------------------------
-            // SAVE ONLY ONCE
+            // SAVE RESULT ONLY ONCE
             // -----------------------------------------
 
             await roundRef.transaction(
                 current => {
 
-                    // Another request already
-                    // created the result.
                     if (
                         isValidRoundResult(
                             current
@@ -961,7 +1259,9 @@ app.post(
             // -----------------------------------------
 
             const finalSnapshot =
-                await roundRef.once("value");
+                await roundRef.once(
+                    "value"
+                );
 
             const finalRound =
                 finalSnapshot.val();
@@ -972,12 +1272,14 @@ app.post(
 
             console.log(
                 JSON.stringify(
-                    finalRound
+                    finalRound,
+                    null,
+                    2
                 )
             );
 
             // -----------------------------------------
-            // VALIDATE FINAL RESULT
+            // VALIDATE
             // -----------------------------------------
 
             if (
@@ -1003,32 +1305,7 @@ app.post(
             // SEND RESULT
             // -----------------------------------------
 
-            console.log(
-                "========== ROUND RESULT SENDING =========="
-            );
-
-            console.log(
-                JSON.stringify({
-
-                    roundId:
-                        id,
-
-                    cards:
-                        finalRound.cards,
-
-                    hands:
-                        finalRound.hands,
-
-                    winner:
-                        finalRound.winner
-                })
-            );
-
-            console.log(
-                "==========================================="
-            );
-
-            return res.status(200).json({
+            const response = {
 
                 success: true,
 
@@ -1059,9 +1336,31 @@ app.post(
                     ),
 
                 generatedAt:
-                    finalRound.generatedAt ||
-                    0
-            });
+                    Number(
+                        finalRound.generatedAt ||
+                        0
+                    )
+            };
+
+            console.log(
+                "========== RESULT SENT =========="
+            );
+
+            console.log(
+                JSON.stringify(
+                    response,
+                    null,
+                    2
+                )
+            );
+
+            console.log(
+                "================================="
+            );
+
+            return res.status(200).json(
+                response
+            );
 
         } catch (error) {
 
@@ -1070,7 +1369,7 @@ app.post(
             );
 
             console.error(
-                "getTeenPattiRound ERROR:"
+                "GET ROUND ERROR"
             );
 
             console.error(
@@ -1111,8 +1410,16 @@ app.post(
             } = req.body;
 
             console.log(
-                "SETTLE ROUND:",
+                "========== SETTLE ROUND =========="
+            );
+
+            console.log(
+                "roundId:",
                 roundId
+            );
+
+            console.log(
+                "=================================="
             );
 
             if (!roundId) {
@@ -1134,13 +1441,15 @@ app.post(
                     "Settled",
 
                 roundId:
-                    String(roundId)
+                    String(
+                        roundId
+                    )
             });
 
         } catch (error) {
 
             console.error(
-                "settleTeenPattiRound ERROR:",
+                "SETTLE ROUND ERROR:",
                 error
             );
 
@@ -1159,31 +1468,47 @@ app.post(
 // 404
 // =====================================================
 
-app.use((req, res) => {
+app.use(
+    (req, res) => {
 
-    res.status(404).json({
+        res.status(404).json({
 
-        success: false,
+            success: false,
 
-        error:
-            "Endpoint not found",
+            error:
+                "Endpoint not found",
 
-        path:
-            req.path
-    });
-});
+            path:
+                req.path
+        });
+    }
+);
 
 // =====================================================
 // GLOBAL ERROR HANDLER
 // =====================================================
 
 app.use(
-    (error, req, res, next) => {
+    (
+        error,
+        req,
+        res,
+        next
+    ) => {
 
         console.error(
             "GLOBAL ERROR:",
             error
         );
+
+        if (
+            res.headersSent
+        ) {
+
+            return next(
+                error
+            );
+        }
 
         res.status(500).json({
 
@@ -1201,38 +1526,123 @@ app.use(
 // =====================================================
 
 const PORT =
-    process.env.PORT || 3000;
+    Number(
+        process.env.PORT
+    ) || 10000;
 
-app.listen(
-    PORT,
-    "0.0.0.0",
+const HOST =
+    "0.0.0.0";
+
+const server =
+    app.listen(
+        PORT,
+        HOST,
+        () => {
+
+            console.log(
+                "================================="
+            );
+
+            console.log(
+                "VIBECASH TEEN PATTI SERVER"
+            );
+
+            console.log(
+                "STATUS: ONLINE"
+            );
+
+            console.log(
+                "HOST:",
+                HOST
+            );
+
+            console.log(
+                "PORT:",
+                PORT
+            );
+
+            console.log(
+                "ROUND_TOTAL_MS:",
+                ROUND_TOTAL_MS
+            );
+
+            console.log(
+                "BETTING_MS:",
+                BETTING_MS
+            );
+
+            console.log(
+                "FIREBASE_DATABASE_URL:",
+                FIREBASE_DATABASE_URL
+                    ? "CONFIGURED"
+                    : "MISSING"
+            );
+
+            console.log(
+                "================================="
+            );
+        }
+    );
+
+// =====================================================
+// SERVER ERROR
+// =====================================================
+
+server.on(
+    "error",
+    error => {
+
+        console.error(
+            "SERVER LISTEN ERROR:",
+            error
+        );
+
+        process.exit(1);
+    }
+);
+
+// =====================================================
+// GRACEFUL SHUTDOWN
+// =====================================================
+
+process.on(
+    "SIGTERM",
     () => {
 
         console.log(
-            "================================="
+            "SIGTERM received."
         );
 
-        console.log(
-            "VibeCash Teen Patti Server Started"
+        server.close(
+            () => {
+
+                console.log(
+                    "Server closed."
+                );
+
+                process.exit(0);
+            }
         );
+    }
+);
+
+process.on(
+    "SIGINT",
+    () => {
 
         console.log(
-            "PORT:",
-            PORT
+            "SIGINT received."
         );
 
-        console.log(
-            "ROUND_TOTAL_MS:",
-            ROUND_TOTAL_MS
-        );
+        server.close(
+            () => {
 
-        console.log(
-            "BETTING_MS:",
-            BETTING_MS
-        );
+                console.log(
+                    "Server closed."
+                );
 
-        console.log(
-            "================================="
+                process.exit(0);
+            }
         );
     }
 );
