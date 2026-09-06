@@ -58,58 +58,19 @@ const SUITS = [
 ];
 
 const RANKS = [
-    {
-        name: "2",
-        value: 2
-    },
-    {
-        name: "3",
-        value: 3
-    },
-    {
-        name: "4",
-        value: 4
-    },
-    {
-        name: "5",
-        value: 5
-    },
-    {
-        name: "6",
-        value: 6
-    },
-    {
-        name: "7",
-        value: 7
-    },
-    {
-        name: "8",
-        value: 8
-    },
-    {
-        name: "9",
-        value: 9
-    },
-    {
-        name: "10",
-        value: 10
-    },
-    {
-        name: "J",
-        value: 11
-    },
-    {
-        name: "Q",
-        value: 12
-    },
-    {
-        name: "K",
-        value: 13
-    },
-    {
-        name: "A",
-        value: 14
-    }
+    { name: "2", value: 2 },
+    { name: "3", value: 3 },
+    { name: "4", value: 4 },
+    { name: "5", value: 5 },
+    { name: "6", value: 6 },
+    { name: "7", value: 7 },
+    { name: "8", value: 8 },
+    { name: "9", value: 9 },
+    { name: "10", value: 10 },
+    { name: "J", value: 11 },
+    { name: "Q", value: 12 },
+    { name: "K", value: 13 },
+    { name: "A", value: 14 }
 ];
 
 // =====================================================
@@ -244,8 +205,7 @@ function evaluateHand(cards) {
     // STRAIGHT
     // =================================================
 
-    let straight =
-        false;
+    let straight = false;
 
     let straightHigh =
         values[0];
@@ -257,11 +217,9 @@ function evaluateHand(cards) {
         values[2] === 2
     ) {
 
-        straight =
-            true;
+        straight = true;
 
-        straightHigh =
-            3;
+        straightHigh = 3;
 
     } else {
 
@@ -335,11 +293,9 @@ function evaluateHand(cards) {
         countValues.includes(2)
     ) {
 
-        let pairValue =
-            0;
+        let pairValue = 0;
 
-        let kicker =
-            0;
+        let kicker = 0;
 
         for (
             const value of values
@@ -453,9 +409,7 @@ function createRoundResult() {
             createDeck()
         );
 
-    // =================================================
     // EXACTLY 9 UNIQUE CARDS
-    // =================================================
 
     const cardsA =
         deck.slice(
@@ -862,7 +816,7 @@ app.post(
             }
 
             // -----------------------------------------
-            // BETTING TIME CHECK
+            // ROUND ID
             // -----------------------------------------
 
             const roundNumber =
@@ -883,6 +837,10 @@ app.post(
                         "Invalid roundId"
                 });
             }
+
+            // -----------------------------------------
+            // BETTING TIME
+            // -----------------------------------------
 
             const startTime =
                 roundNumber *
@@ -907,10 +865,7 @@ app.post(
             }
 
             // -----------------------------------------
-            // IMPORTANT
-            //
-            // Existing client/Firebase demand logic
-            // is not changed here.
+            // BET ACKNOWLEDGEMENT
             // -----------------------------------------
 
             return res.status(200).json({
@@ -952,6 +907,7 @@ app.post(
 
 // =====================================================
 // GET TEEN PATTI ROUND
+// IMPORTANT: ANDROID USES POST
 // =====================================================
 
 app.post(
@@ -984,15 +940,24 @@ app.post(
                 "================================="
             );
 
-            const {
-                roundId
-            } = req.body;
+            // -----------------------------------------
+            // READ ROUND ID
+            // -----------------------------------------
+
+            const roundId =
+                String(
+                    req.body.roundId || ""
+                ).trim();
 
             // -----------------------------------------
-            // VALIDATE
+            // VALIDATE ROUND ID
             // -----------------------------------------
 
             if (!roundId) {
+
+                console.error(
+                    "ROUND ID MISSING"
+                );
 
                 return res.status(400).json({
 
@@ -1002,11 +967,6 @@ app.post(
                         "roundId required"
                 });
             }
-
-            const id =
-                String(
-                    roundId
-                );
 
             const roundNumber =
                 Number(
@@ -1020,6 +980,11 @@ app.post(
                 roundNumber <= 0
             ) {
 
+                console.error(
+                    "INVALID ROUND ID:",
+                    roundId
+                );
+
                 return res.status(400).json({
 
                     success: false,
@@ -1030,26 +995,12 @@ app.post(
             }
 
             // -----------------------------------------
-            // FIREBASE ROUND
-            // -----------------------------------------
-
-            const roundRef =
-                db
-                    .ref(
-                        "global_teen_patti"
-                    )
-                    .child(
-                        "rounds"
-                    )
-                    .child(
-                        id
-                    );
-
-            // -----------------------------------------
-            // ANDROID ROUND ID FORMULA
+            // ROUND TIME
+            //
+            // Android:
             //
             // roundId =
-            // floor(currentTime / 23400)
+            // floor(time / 23400)
             //
             // Therefore:
             //
@@ -1069,27 +1020,43 @@ app.post(
                 startTime;
 
             console.log(
-                "roundId:",
-                id
+                "ROUND ID:",
+                roundId
             );
 
             console.log(
-                "startTime:",
+                "ROUND START:",
                 startTime
             );
 
             console.log(
-                "now:",
+                "SERVER NOW:",
                 now
             );
 
             console.log(
-                "elapsed:",
+                "ELAPSED:",
                 elapsed
             );
 
             // -----------------------------------------
-            // READ EXISTING ROUND
+            // FIREBASE ROUND REFERENCE
+            // -----------------------------------------
+
+            const roundRef =
+                db
+                    .ref(
+                        "global_teen_patti"
+                    )
+                    .child(
+                        "rounds"
+                    )
+                    .child(
+                        roundId
+                    );
+
+            // -----------------------------------------
+            // READ EXISTING RESULT
             // -----------------------------------------
 
             const existingSnapshot =
@@ -1101,7 +1068,7 @@ app.post(
                 existingSnapshot.val();
 
             // -----------------------------------------
-            // EXISTING RESULT
+            // IF RESULT ALREADY EXISTS
             // -----------------------------------------
 
             if (
@@ -1111,21 +1078,30 @@ app.post(
             ) {
 
                 console.log(
-                    "EXISTING RESULT FOUND"
+                    "EXISTING ROUND RESULT FOUND"
                 );
 
-                return res.status(200).json({
+                const response = {
 
                     success: true,
 
                     roundId:
-                        id,
+                        roundId,
 
                     bettingOpen:
                         false,
 
-                    cards:
-                        existing.cards,
+                    cards: {
+
+                        A:
+                            existing.cards.A,
+
+                        B:
+                            existing.cards.B,
+
+                        C:
+                            existing.cards.C
+                    },
 
                     hands:
                         existing.hands || {},
@@ -1140,7 +1116,23 @@ app.post(
                             existing.generatedAt ||
                             0
                         )
-                });
+                };
+
+                console.log(
+                    "RETURNING EXISTING RESULT"
+                );
+
+                console.log(
+                    JSON.stringify(
+                        response,
+                        null,
+                        2
+                    )
+                );
+
+                return res.status(200).json(
+                    response
+                );
             }
 
             // -----------------------------------------
@@ -1163,7 +1155,7 @@ app.post(
                 );
 
                 console.log(
-                    "remainingMs:",
+                    "REMAINING MS:",
                     remainingMs
                 );
 
@@ -1172,7 +1164,7 @@ app.post(
                     success: true,
 
                     roundId:
-                        id,
+                        roundId,
 
                     bettingOpen:
                         true,
@@ -1220,6 +1212,10 @@ app.post(
 
             // -----------------------------------------
             // SAVE RESULT ONLY ONCE
+            //
+            // IMPORTANT:
+            // If another request already created
+            // this round, preserve that result.
             // -----------------------------------------
 
             await roundRef.transaction(
@@ -1231,7 +1227,7 @@ app.post(
                         )
                     ) {
 
-                        return;
+                        return current;
                     }
 
                     return {
@@ -1267,7 +1263,7 @@ app.post(
                 finalSnapshot.val();
 
             console.log(
-                "FINAL ROUND:"
+                "FINAL ROUND FROM FIREBASE:"
             );
 
             console.log(
@@ -1279,7 +1275,7 @@ app.post(
             );
 
             // -----------------------------------------
-            // VALIDATE
+            // VALIDATE FINAL RESULT
             // -----------------------------------------
 
             if (
@@ -1302,7 +1298,7 @@ app.post(
             }
 
             // -----------------------------------------
-            // SEND RESULT
+            // FINAL RESPONSE
             // -----------------------------------------
 
             const response = {
@@ -1310,7 +1306,7 @@ app.post(
                 success: true,
 
                 roundId:
-                    id,
+                    roundId,
 
                 bettingOpen:
                     false,
@@ -1389,7 +1385,8 @@ app.post(
                 success: false,
 
                 error:
-                    error.message
+                    error.message ||
+                    "Server error"
             });
         }
     }
