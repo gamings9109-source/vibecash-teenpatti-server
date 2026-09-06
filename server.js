@@ -7,7 +7,9 @@ const crypto = require("crypto");
 // FIREBASE
 // =====================================================
 
-admin.initializeApp();
+admin.initializeApp({
+    databaseURL: process.env.FIREBASE_DATABASE_URL
+});
 
 const db = admin.database();
 
