@@ -15,13 +15,13 @@ const PORT = process.env.PORT || 10000;
 
 const ROOM_ID = "567943";
 
-// 20 seconds cards hidden
+// Cards hidden for 20 seconds
 const WAITING_TIME = 20000;
 
-// 5 seconds cards visible
+// Cards visible for 5 seconds
 const REVEAL_TIME = 5000;
 
-// Reconciler checks every 1 second
+// Check Firebase every 1 second
 const RECONCILE_INTERVAL = 1000;
 
 const SERVICE_ACCOUNT_PATH =
@@ -108,6 +108,16 @@ const roundRef =
         .child(ROOM_ID)
         .child("teen_patti")
         .child("round");
+
+// =====================================================
+// ROUND LOCK
+// =====================================================
+//
+// Prevents two async timers from creating the
+// same next round at the same time.
+//
+
+let roundOperationRunning = false;
 
 // =====================================================
 // 52 CARD DECK
@@ -323,6 +333,7 @@ function getSequenceHigh(values) {
         );
 
     // A-2-3 lowest sequence
+
     if (
         sorted[0] === 2 &&
         sorted[1] === 3 &&
@@ -333,6 +344,7 @@ function getSequenceHigh(values) {
     }
 
     // Normal sequence
+
     if (
         sorted[1] ===
             sorted[0] + 1 &&
@@ -757,220 +769,351 @@ function calculateRoundResults(cards) {
 // CREATE NEW ROUND
 // =====================================================
 
-async function createNewRound() {
+async function createNewRound(reason) {
 
     // -------------------------------------------------
-    // READ CURRENT ROUND
+    // PREVENT DUPLICATE CREATION
     // -------------------------------------------------
 
-    const snapshot =
-        await roundRef.once(
-            "value"
+    if (roundOperationRunning) {
+
+        console.log(
+            "CREATE ROUND: operation already running"
         );
 
-    const current =
-        snapshot.val() || {};
-
-    let oldRoundId =
-        Number(
-            current.round_id || 0
-        );
-
-    if (
-        !Number.isFinite(oldRoundId)
-    ) {
-
-        oldRoundId = 0;
+        return null;
     }
 
-    // -------------------------------------------------
-    // NEW ROUND ID
-    // -------------------------------------------------
+    roundOperationRunning = true;
 
-    const newRoundId =
-        oldRoundId + 1;
+    try {
 
-    // -------------------------------------------------
-    // GENERATE CARDS
-    // -------------------------------------------------
+        // -------------------------------------------------
+        // READ CURRENT ROUND
+        // -------------------------------------------------
 
-    const cards =
-        generateNineCards();
+        const snapshot =
+            await roundRef.once(
+                "value"
+            );
 
-    // -------------------------------------------------
-    // CALCULATE RESULTS
-    // -------------------------------------------------
+        const current =
+            snapshot.val() || {};
 
-    const results =
-        calculateRoundResults(
+        let oldRoundId =
+            Number(
+                current.round_id || 0
+            );
+
+        if (
+            !Number.isFinite(oldRoundId)
+        ) {
+
+            oldRoundId = 0;
+        }
+
+        // -------------------------------------------------
+        // NEW ROUND ID
+        // -------------------------------------------------
+
+        const newRoundId =
+            oldRoundId + 1;
+
+        // -------------------------------------------------
+        // GENERATE CARDS
+        // -------------------------------------------------
+
+        const cards =
+            generateNineCards();
+
+        // -------------------------------------------------
+        // CALCULATE RESULTS
+        // -------------------------------------------------
+
+        const results =
+            calculateRoundResults(
+                cards
+            );
+
+        // -------------------------------------------------
+        // SERVER TIME
+        // -------------------------------------------------
+
+        const now =
+            Date.now();
+
+        const revealAt =
+            now + WAITING_TIME;
+
+        // -------------------------------------------------
+        // ROUND DATA
+        // -------------------------------------------------
+
+        const roundData = {
+
+            round_id:
+                String(newRoundId),
+
+            status:
+                "waiting",
+
+            started_at:
+                now,
+
+            reveal_at:
+                revealAt,
+
+            cards: {
+
+                A1: cards.A1,
+                A2: cards.A2,
+                A3: cards.A3,
+
+                B1: cards.B1,
+                B2: cards.B2,
+                B3: cards.B3,
+
+                C1: cards.C1,
+                C2: cards.C2,
+                C3: cards.C3
+
+            },
+
+            results: {
+
+                A: {
+
+                    category:
+                        results.A.category,
+
+                    category_rank:
+                        results.A.category_rank
+
+                },
+
+                B: {
+
+                    category:
+                        results.B.category,
+
+                    category_rank:
+                        results.B.category_rank
+
+                },
+
+                C: {
+
+                    category:
+                        results.C.category,
+
+                    category_rank:
+                        results.C.category_rank
+
+                }
+
+            },
+
+            winner:
+                results.winner
+
+        };
+
+        // -------------------------------------------------
+        // SAVE
+        // -------------------------------------------------
+
+        await roundRef.set(
+            roundData
+        );
+
+        // -------------------------------------------------
+        // LOG
+        // -------------------------------------------------
+
+        console.log(
+            "========================================"
+        );
+
+        console.log(
+            `ROUND ${newRoundId} CREATED`
+        );
+
+        console.log(
+            "REASON:",
+            reason || "normal"
+        );
+
+        console.log(
+            "STATUS: waiting"
+        );
+
+        console.log(
+            "WAITING: 20 SECONDS"
+        );
+
+        console.log(
+            "STARTED AT:",
+            new Date(
+                now
+            ).toISOString()
+        );
+
+        console.log(
+            "REVEAL AT:",
+            new Date(
+                revealAt
+            ).toISOString()
+        );
+
+        console.log(
+            "A:",
+            results.A.category
+        );
+
+        console.log(
+            "B:",
+            results.B.category
+        );
+
+        console.log(
+            "C:",
+            results.C.category
+        );
+
+        console.log(
+            "WINNER:",
+            results.winner
+        );
+
+        console.log(
+            "CARDS:",
             cards
         );
 
-    // -------------------------------------------------
-    // SERVER TIME
-    // -------------------------------------------------
+        console.log(
+            "========================================"
+        );
 
-    const now =
-        Date.now();
+        // -------------------------------------------------
+        // SCHEDULE REVEAL
+        // -------------------------------------------------
 
-    const revealAt =
-        now + WAITING_TIME;
-
-    // -------------------------------------------------
-    // ROUND DATA
-    // -------------------------------------------------
-
-    const roundData = {
-
-        round_id:
+        scheduleReveal(
             String(newRoundId),
-
-        status:
-            "waiting",
-
-        started_at:
-            now,
-
-        reveal_at:
-            revealAt,
-
-        cards: {
-
-            A1: cards.A1,
-            A2: cards.A2,
-            A3: cards.A3,
-
-            B1: cards.B1,
-            B2: cards.B2,
-            B3: cards.B3,
-
-            C1: cards.C1,
-            C2: cards.C2,
-            C3: cards.C3
-
-        },
-
-        // -------------------------------------------------
-        // RESULTS
-        // -------------------------------------------------
-
-        results: {
-
-            A: {
-
-                category:
-                    results.A.category,
-
-                category_rank:
-                    results.A.category_rank
-
-            },
-
-            B: {
-
-                category:
-                    results.B.category,
-
-                category_rank:
-                    results.B.category_rank
-
-            },
-
-            C: {
-
-                category:
-                    results.C.category,
-
-                category_rank:
-                    results.C.category_rank
-
-            }
-
-        },
-
-        // -------------------------------------------------
-        // WINNER
-        // -------------------------------------------------
-
-        winner:
-            results.winner
-
-    };
-
-    // -------------------------------------------------
-    // SAVE
-    // -------------------------------------------------
-
-    await roundRef.set(
-        roundData
-    );
-
-    // -------------------------------------------------
-    // LOG
-    // -------------------------------------------------
-
-    console.log(
-        "========================================"
-    );
-
-    console.log(
-        `ROUND ${newRoundId} CREATED`
-    );
-
-    console.log(
-        "STATUS: waiting"
-    );
-
-    console.log(
-        "WAITING: 20 SECONDS"
-    );
-
-    console.log(
-        "REVEAL AT:",
-        new Date(
             revealAt
-        ).toISOString()
-    );
+        );
 
-    console.log(
-        "A:",
-        results.A.category
-    );
+        return roundData;
 
-    console.log(
-        "B:",
-        results.B.category
-    );
+    } catch (error) {
 
-    console.log(
-        "C:",
-        results.C.category
-    );
+        console.error(
+            "CREATE ROUND ERROR:",
+            error
+        );
 
-    console.log(
-        "WINNER:",
-        results.winner
-    );
+        return null;
 
-    console.log(
-        "CARDS:",
-        cards
-    );
+    } finally {
 
-    console.log(
-        "========================================"
-    );
+        roundOperationRunning = false;
+    }
+}
 
-    // -------------------------------------------------
-    // SCHEDULE REVEAL
-    // -------------------------------------------------
+// =====================================================
+// REVEAL ROUND
+// =====================================================
 
-    scheduleReveal(
-        String(newRoundId),
-        revealAt
-    );
+async function revealRound(
+    roundId
+) {
 
-    return roundData;
+    try {
+
+        const snapshot =
+            await roundRef.once(
+                "value"
+            );
+
+        const latest =
+            snapshot.val();
+
+        // -------------------------------------------------
+        // CURRENT ROUND CHECK
+        // -------------------------------------------------
+
+        if (
+            !latest ||
+            String(
+                latest.round_id
+            ) !==
+            String(roundId)
+        ) {
+
+            console.log(
+                `REVEAL ${roundId}: no longer current`
+            );
+
+            return false;
+        }
+
+        // -------------------------------------------------
+        // ONLY WAITING CAN REVEAL
+        // -------------------------------------------------
+
+        if (
+            latest.status !==
+            "waiting"
+        ) {
+
+            console.log(
+                `REVEAL ${roundId}: status already ${latest.status}`
+            );
+
+            return false;
+        }
+
+        // -------------------------------------------------
+        // REVEAL
+        // -------------------------------------------------
+
+        const revealedAt =
+            Date.now();
+
+        await roundRef.update({
+
+            status:
+                "reveal",
+
+            revealed_at:
+                revealedAt
+
+        });
+
+        console.log(
+            `ROUND ${roundId} REVEALED`
+        );
+
+        console.log(
+            "CARDS VISIBLE FOR 5 SECONDS"
+        );
+
+        scheduleNextRoundAfterReveal(
+            roundId,
+            revealedAt
+        );
+
+        return true;
+
+    } catch (error) {
+
+        console.error(
+            "REVEAL ERROR:",
+            error
+        );
+
+        return false;
+    }
 }
 
 // =====================================================
@@ -985,11 +1128,47 @@ function scheduleReveal(
     const delay =
         Math.max(
             0,
-            revealAt - Date.now()
+            Number(revealAt) -
+            Date.now()
         );
 
     console.log(
         `Round ${roundId} will reveal in ${delay} ms`
+    );
+
+    setTimeout(
+        async () => {
+
+            await revealRound(
+                roundId
+            );
+
+        },
+        delay
+    );
+}
+
+// =====================================================
+// SCHEDULE NEXT ROUND
+// =====================================================
+
+function scheduleNextRoundAfterReveal(
+    roundId,
+    revealedAt
+) {
+
+    const delay =
+        Math.max(
+            0,
+            (
+                Number(revealedAt) +
+                REVEAL_TIME
+            ) -
+            Date.now()
+        );
+
+    console.log(
+        `Round ${roundId} next round in ${delay} ms`
     );
 
     setTimeout(
@@ -1005,10 +1184,6 @@ function scheduleReveal(
                 const latest =
                     snapshot.val();
 
-                // -------------------------------------------------
-                // CURRENT ROUND CHECK
-                // -------------------------------------------------
-
                 if (
                     !latest ||
                     String(
@@ -1018,121 +1193,40 @@ function scheduleReveal(
                 ) {
 
                     console.log(
-                        `Round ${roundId} timer ignored`
+                        `ROUND ${roundId}: no longer current`
                     );
 
                     return;
                 }
-
-                // -------------------------------------------------
-                // ONLY WAITING CAN REVEAL
-                // -------------------------------------------------
 
                 if (
                     latest.status !==
-                    "waiting"
+                    "reveal"
                 ) {
 
                     console.log(
-                        `Round ${roundId} already changed`
+                        `ROUND ${roundId}: status changed to ${latest.status}`
                     );
 
                     return;
                 }
 
-                // -------------------------------------------------
-                // REVEAL
-                // -------------------------------------------------
-
-                await roundRef.update({
-
-                    status:
-                        "reveal",
-
-                    revealed_at:
-                        Date.now()
-
-                });
-
                 console.log(
-                    `ROUND ${roundId} REVEALED`
+                    `ROUND ${roundId} 5 SECONDS FINISHED`
                 );
 
                 console.log(
-                    "CARDS VISIBLE FOR 5 SECONDS"
+                    "CREATING NEXT ROUND..."
                 );
 
-                // -------------------------------------------------
-                // NEXT ROUND
-                // -------------------------------------------------
-
-                setTimeout(
-                    async () => {
-
-                        try {
-
-                            const latestSnapshot =
-                                await roundRef.once(
-                                    "value"
-                                );
-
-                            const latestRound =
-                                latestSnapshot.val();
-
-                            if (
-                                !latestRound ||
-                                String(
-                                    latestRound.round_id
-                                ) !==
-                                String(roundId)
-                            ) {
-
-                                console.log(
-                                    `Round ${roundId} no longer current`
-                                );
-
-                                return;
-                            }
-
-                            if (
-                                latestRound.status !==
-                                "reveal"
-                            ) {
-
-                                console.log(
-                                    `Round ${roundId} status already changed`
-                                );
-
-                                return;
-                            }
-
-                            console.log(
-                                `ROUND ${roundId} 5 SECONDS FINISHED`
-                            );
-
-                            console.log(
-                                "CREATING NEXT ROUND..."
-                            );
-
-                            await createNewRound();
-
-                        } catch (error) {
-
-                            console.error(
-                                "Next round error:",
-                                error
-                            );
-
-                        }
-
-                    },
-                    REVEAL_TIME
+                await createNewRound(
+                    "normal cycle"
                 );
 
             } catch (error) {
 
                 console.error(
-                    "Reveal error:",
+                    "NEXT ROUND ERROR:",
                     error
                 );
 
@@ -1144,12 +1238,10 @@ function scheduleReveal(
 }
 
 // =====================================================
-// ROUND RECONCILER
+// RECONCILER
 // =====================================================
 //
-// Ye function server restart/sleep ke baad agar Firebase
-// mein purana waiting/reveal round milta hai to usko
-// recover karta hai.
+// Checks Firebase while server is awake.
 //
 // =====================================================
 
@@ -1173,17 +1265,19 @@ async function reconcileRound() {
         const round =
             snapshot.val();
 
-        // -------------------------------------------------
+        // =================================================
         // NO ROUND
-        // -------------------------------------------------
+        // =================================================
 
         if (!round) {
 
             console.log(
-                "RECONCILE: No round found"
+                "RECONCILE: NO ROUND"
             );
 
-            await createNewRound();
+            await createNewRound(
+                "reconcile no round"
+            );
 
             return;
         }
@@ -1203,67 +1297,26 @@ async function reconcileRound() {
                 round.reveal_at || 0
             );
 
+        const now =
+            Date.now();
+
         // =================================================
         // WAITING
         // =================================================
 
         if (
-            status === "waiting" &&
-            revealAt > 0
+            status === "waiting"
         ) {
 
-            // -------------------------------------------------
-            // Time finished
-            // -------------------------------------------------
-
-            if (
-                Date.now() >=
-                revealAt
-            ) {
+            // Invalid reveal time
+            if (revealAt <= 0) {
 
                 console.log(
-                    `RECONCILE: Round ${roundId} waiting finished`
+                    `RECONCILE: Round ${roundId} invalid reveal_at`
                 );
 
-                const latestSnapshot =
-                    await roundRef.once(
-                        "value"
-                    );
-
-                const latest =
-                    latestSnapshot.val();
-
-                if (
-                    !latest ||
-                    String(
-                        latest.round_id
-                    ) !==
-                    roundId
-                ) {
-
-                    return;
-                }
-
-                if (
-                    latest.status !==
-                    "waiting"
-                ) {
-
-                    return;
-                }
-
-                await roundRef.update({
-
-                    status:
-                        "reveal",
-
-                    revealed_at:
-                        Date.now()
-
-                });
-
-                console.log(
-                    `RECONCILE: Round ${roundId} -> reveal`
+                await createNewRound(
+                    "invalid waiting round"
                 );
 
                 return;
@@ -1272,6 +1325,23 @@ async function reconcileRound() {
             // -------------------------------------------------
             // Still waiting
             // -------------------------------------------------
+
+            if (now < revealAt) {
+
+                return;
+            }
+
+            // -------------------------------------------------
+            // Waiting finished
+            // -------------------------------------------------
+
+            console.log(
+                `RECONCILE: Round ${roundId} waiting finished`
+            );
+
+            await revealRound(
+                roundId
+            );
 
             return;
         }
@@ -1289,16 +1359,11 @@ async function reconcileRound() {
                     round.revealed_at || 0
                 );
 
-            // -------------------------------------------------
-            // Missing revealed_at
-            // -------------------------------------------------
-
-            if (
-                revealedAt <= 0
-            ) {
+            // Missing reveal time
+            if (revealedAt <= 0) {
 
                 revealedAt =
-                    Date.now();
+                    now;
 
                 await roundRef.update({
 
@@ -1314,51 +1379,25 @@ async function reconcileRound() {
                 return;
             }
 
-            // -------------------------------------------------
-            // Check 5 seconds
-            // -------------------------------------------------
-
             const nextRoundAt =
                 revealedAt +
                 REVEAL_TIME;
 
+            // -------------------------------------------------
+            // 5 seconds finished
+            // -------------------------------------------------
+
             if (
-                Date.now() >=
-                nextRoundAt
+                now >= nextRoundAt
             ) {
-
-                const latestSnapshot =
-                    await roundRef.once(
-                        "value"
-                    );
-
-                const latest =
-                    latestSnapshot.val();
-
-                if (
-                    !latest ||
-                    String(
-                        latest.round_id
-                    ) !==
-                    roundId
-                ) {
-
-                    return;
-                }
-
-                if (
-                    latest.status !==
-                    "reveal"
-                ) {
-
-                    return;
-                }
 
                 console.log(
                     `RECONCILE: Round ${roundId} reveal finished`
                 );
 
-                await createNewRound();
+                await createNewRound(
+                    "reconcile reveal finished"
+                );
 
                 return;
             }
@@ -1371,10 +1410,12 @@ async function reconcileRound() {
         // =================================================
 
         console.log(
-            `RECONCILE: Unknown status "${status}"`
+            `RECONCILE: UNKNOWN STATUS "${status}"`
         );
 
-        await createNewRound();
+        await createNewRound(
+            "unknown status"
+        );
 
     } catch (error) {
 
@@ -1390,7 +1431,18 @@ async function reconcileRound() {
 }
 
 // =====================================================
-// RESUME EXISTING ROUND
+// STARTUP ROUND RECOVERY
+// =====================================================
+//
+// Important:
+//
+// If server wakes/restarts and the old waiting round
+// has already expired, we DO NOT immediately reveal
+// that old round.
+//
+// We create a fresh round so the user gets a new
+// complete 20-second waiting period.
+//
 // =====================================================
 
 async function resumeExistingRound() {
@@ -1412,14 +1464,16 @@ async function resumeExistingRound() {
         if (!round) {
 
             console.log(
-                "No existing round found."
+                "STARTUP: NO EXISTING ROUND"
             );
 
             console.log(
-                "Creating first round..."
+                "STARTUP: CREATING FIRST ROUND"
             );
 
-            await createNewRound();
+            await createNewRound(
+                "startup no round"
+            );
 
             return;
         }
@@ -1439,12 +1493,15 @@ async function resumeExistingRound() {
                 round.reveal_at || 0
             );
 
+        const now =
+            Date.now();
+
         console.log(
             "========================================"
         );
 
         console.log(
-            "EXISTING ROUND FOUND"
+            "STARTUP ROUND RECOVERY"
         );
 
         console.log(
@@ -1458,6 +1515,16 @@ async function resumeExistingRound() {
         );
 
         console.log(
+            "REVEAL AT:",
+            revealAt
+        );
+
+        console.log(
+            "SERVER NOW:",
+            now
+        );
+
+        console.log(
             "========================================"
         );
 
@@ -1467,11 +1534,18 @@ async function resumeExistingRound() {
 
         if (
             status === "waiting" &&
-            revealAt > Date.now()
+            revealAt > now
         ) {
 
+            const remaining =
+                revealAt - now;
+
             console.log(
-                "Resuming waiting countdown..."
+                `STARTUP: Round ${roundId} still waiting`
+            );
+
+            console.log(
+                `STARTUP: ${remaining} ms remaining`
             );
 
             scheduleReveal(
@@ -1483,30 +1557,28 @@ async function resumeExistingRound() {
         }
 
         // =================================================
-        // WAITING - TIME FINISHED
+        // WAITING - EXPIRED
         // =================================================
+        //
+        // Fresh round is created so the client gets
+        // another full 20-second waiting period.
+        //
 
         if (
             status === "waiting" &&
-            revealAt <= Date.now()
+            revealAt <= now
         ) {
 
-            await roundRef.update({
-
-                status:
-                    "reveal",
-
-                revealed_at:
-                    Date.now()
-
-            });
-
             console.log(
-                `ROUND ${roundId} REVEALED AFTER RESUME`
+                `STARTUP: Round ${roundId} waiting expired`
             );
 
-            scheduleNextRoundAfterReveal(
-                roundId
+            console.log(
+                "STARTUP: Creating fresh 20-second round"
+            );
+
+            await createNewRound(
+                "startup expired waiting"
             );
 
             return;
@@ -1530,7 +1602,7 @@ async function resumeExistingRound() {
             ) {
 
                 revealedAt =
-                    Date.now();
+                    now;
 
                 await roundRef.update({
 
@@ -1538,148 +1610,85 @@ async function resumeExistingRound() {
                         revealedAt
 
                 });
+
+                console.log(
+                    `STARTUP: Round ${roundId} missing revealed_at fixed`
+                );
             }
 
-            const nextRoundAt =
+            const revealEnd =
                 revealedAt +
                 REVEAL_TIME;
 
-            const delay =
-                Math.max(
-                    0,
-                    nextRoundAt -
-                    Date.now()
+            // -------------------------------------------------
+            // Still inside 5 second reveal
+            // -------------------------------------------------
+
+            if (
+                revealEnd > now
+            ) {
+
+                const remaining =
+                    revealEnd - now;
+
+                console.log(
+                    `STARTUP: Round ${roundId} reveal active`
                 );
 
+                console.log(
+                    `STARTUP: ${remaining} ms remaining`
+                );
+
+                scheduleNextRoundAfterReveal(
+                    roundId,
+                    revealedAt
+                );
+
+                return;
+            }
+
+            // -------------------------------------------------
+            // Reveal already finished
+            // -------------------------------------------------
+
             console.log(
-                `Reveal active. Next round in ${delay} ms`
+                `STARTUP: Round ${roundId} reveal already finished`
             );
 
-            setTimeout(
-                async () => {
+            console.log(
+                "STARTUP: Creating fresh round"
+            );
 
-                    try {
-
-                        const latestSnapshot =
-                            await roundRef.once(
-                                "value"
-                            );
-
-                        const latest =
-                            latestSnapshot.val();
-
-                        if (
-                            latest &&
-                            String(
-                                latest.round_id
-                            ) ===
-                            roundId &&
-                            latest.status ===
-                            "reveal"
-                        ) {
-
-                            await createNewRound();
-
-                        }
-
-                    } catch (error) {
-
-                        console.error(
-                            "Resume reveal error:",
-                            error
-                        );
-
-                    }
-
-                },
-                delay
+            await createNewRound(
+                "startup expired reveal"
             );
 
             return;
         }
 
         // =================================================
-        // UNKNOWN
+        // UNKNOWN STATUS
         // =================================================
 
         console.log(
-            "Unknown round status."
+            `STARTUP: Unknown status "${status}"`
         );
 
         console.log(
-            "Creating fresh round..."
+            "STARTUP: Creating fresh round"
         );
 
-        await createNewRound();
+        await createNewRound(
+            "startup unknown status"
+        );
 
     } catch (error) {
 
         console.error(
-            "Resume error:",
+            "STARTUP RECOVERY ERROR:",
             error
         );
-
     }
-}
-
-// =====================================================
-// SCHEDULE NEXT ROUND AFTER REVEAL
-// =====================================================
-
-function scheduleNextRoundAfterReveal(
-    roundId
-) {
-
-    setTimeout(
-        async () => {
-
-            try {
-
-                const snapshot =
-                    await roundRef.once(
-                        "value"
-                    );
-
-                const latest =
-                    snapshot.val();
-
-                if (
-                    !latest ||
-                    String(
-                        latest.round_id
-                    ) !==
-                    String(roundId)
-                ) {
-
-                    return;
-                }
-
-                if (
-                    latest.status !==
-                    "reveal"
-                ) {
-
-                    return;
-                }
-
-                console.log(
-                    `ROUND ${roundId} 5 SECONDS FINISHED`
-                );
-
-                await createNewRound();
-
-            } catch (error) {
-
-                console.error(
-                    "Schedule next round error:",
-                    error
-                );
-
-            }
-
-        },
-        REVEAL_TIME
-    );
 }
 
 // =====================================================
@@ -1745,7 +1754,6 @@ app.get(
                         "No round found"
 
                 });
-
             }
 
             res.status(200).json({
@@ -1763,7 +1771,7 @@ app.get(
         } catch (error) {
 
             console.error(
-                "Get round error:",
+                "GET ROUND ERROR:",
                 error
             );
 
@@ -1775,9 +1783,7 @@ app.get(
                     error.message
 
             });
-
         }
-
     }
 );
 
@@ -1812,11 +1818,24 @@ app.post(
                         "Unauthorized"
 
                 });
-
             }
 
             const result =
-                await createNewRound();
+                await createNewRound(
+                    "admin start"
+                );
+
+            if (!result) {
+
+                return res.status(409).json({
+
+                    ok: false,
+
+                    error:
+                        "Round operation already running"
+
+                });
+            }
 
             res.status(200).json({
 
@@ -1836,7 +1855,7 @@ app.post(
         } catch (error) {
 
             console.error(
-                "Start round error:",
+                "START ROUND ERROR:",
                 error
             );
 
@@ -1848,9 +1867,7 @@ app.post(
                     error.message
 
             });
-
         }
-
     }
 );
 
@@ -1869,7 +1886,6 @@ app.use(
                 "Endpoint not found"
 
         });
-
     }
 );
 
@@ -1919,6 +1935,10 @@ app.listen(
         );
 
         console.log(
+            "STARTUP RECOVERY: ENABLED"
+        );
+
+        console.log(
             "========================================"
         );
 
@@ -1929,14 +1949,13 @@ app.listen(
         } catch (error) {
 
             console.error(
-                "Startup round error:",
+                "STARTUP ROUND ERROR:",
                 error
             );
-
         }
 
         // -------------------------------------------------
-        // CONTINUOUS ROUND CHECK
+        // CONTINUOUS RECONCILER
         // -------------------------------------------------
 
         setInterval(
@@ -1944,5 +1963,8 @@ app.listen(
             RECONCILE_INTERVAL
         );
 
+        console.log(
+            "RECONCILER STARTED"
+        );
     }
 );
