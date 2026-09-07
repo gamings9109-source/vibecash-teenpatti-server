@@ -19,7 +19,7 @@ const ROOM_ID = "567943";
 const WAITING_TIME = 20000;
 
 // Cards visible for 5 seconds
-const REVEAL_TIME = 5000;
+const REVEAL_TIME = 10000;
 
 // Check Firebase every 1 second
 const RECONCILE_INTERVAL = 1000;
