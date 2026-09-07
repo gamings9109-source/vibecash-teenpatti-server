@@ -16,19 +16,19 @@ const PORT = process.env.PORT || 10000;
 const ROOM_ID = "567943";
 
 // Cards hidden for 20 seconds
-const WAITING_TIME = 20000;
+const WAITING_TIME = 20 * 1000;
 
-// Cards visible for 5 seconds
-const REVEAL_TIME = 10000;
+// Cards visible for 10 seconds
+const REVEAL_TIME = 10 * 1000;
 
-// Check Firebase every 1 second
+// Firebase check while server is awake
 const RECONCILE_INTERVAL = 1000;
 
 const SERVICE_ACCOUNT_PATH =
     "/etc/secrets/firebase-service-account.json";
 
 // =====================================================
-// CHECK ENVIRONMENT
+// ENVIRONMENT CHECK
 // =====================================================
 
 if (!process.env.FIREBASE_DATABASE_URL) {
@@ -44,7 +44,7 @@ if (!process.env.ADMIN_SECRET) {
 }
 
 // =====================================================
-// CHECK SERVICE ACCOUNT
+// SERVICE ACCOUNT CHECK
 // =====================================================
 
 if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
@@ -80,7 +80,7 @@ try {
 }
 
 // =====================================================
-// FIREBASE ADMIN INITIALIZE
+// FIREBASE INITIALIZE
 // =====================================================
 
 admin.initializeApp({
@@ -112,12 +112,10 @@ const roundRef =
 // =====================================================
 // ROUND LOCK
 // =====================================================
-//
-// Prevents two async timers from creating the
-// same next round at the same time.
-//
 
 let roundOperationRunning = false;
+
+let reconcileRunning = false;
 
 // =====================================================
 // 52 CARD DECK
@@ -185,7 +183,6 @@ function createDeck() {
             );
 
         }
-
     }
 
     return deck;
@@ -332,8 +329,7 @@ function getSequenceHigh(values) {
             (a, b) => a - b
         );
 
-    // A-2-3 lowest sequence
-
+    // A-2-3
     if (
         sorted[0] === 2 &&
         sorted[1] === 3 &&
@@ -344,7 +340,6 @@ function getSequenceHigh(values) {
     }
 
     // Normal sequence
-
     if (
         sorted[1] ===
             sorted[0] + 1 &&
@@ -399,15 +394,6 @@ function getPairInfo(values) {
 
 // =====================================================
 // CALCULATE HAND
-// =====================================================
-//
-// 6 = Trail
-// 5 = Pure Sequence
-// 4 = Sequence
-// 3 = Color
-// 2 = Pair
-// 1 = High Card
-//
 // =====================================================
 
 function calculateHand(cards) {
@@ -560,7 +546,7 @@ function calculateHand(cards) {
 }
 
 // =====================================================
-// COMPARE TWO HANDS
+// COMPARE HANDS
 // =====================================================
 
 function compareHands(first, second) {
@@ -610,7 +596,7 @@ function compareHands(first, second) {
 }
 
 // =====================================================
-// CALCULATE A/B/C RESULTS + WINNER
+// CALCULATE RESULTS + WINNER
 // =====================================================
 
 function calculateRoundResults(cards) {
@@ -635,10 +621,6 @@ function calculateRoundResults(cards) {
             cards.C2,
             cards.C3
         ]);
-
-    // =================================================
-    // FIND BEST HAND
-    // =================================================
 
     let winner =
         "A";
@@ -761,7 +743,6 @@ function calculateRoundResults(cards) {
 
         winner:
             winner
-
     };
 }
 
@@ -770,10 +751,6 @@ function calculateRoundResults(cards) {
 // =====================================================
 
 async function createNewRound(reason) {
-
-    // -------------------------------------------------
-    // PREVENT DUPLICATE CREATION
-    // -------------------------------------------------
 
     if (roundOperationRunning) {
 
@@ -787,10 +764,6 @@ async function createNewRound(reason) {
     roundOperationRunning = true;
 
     try {
-
-        // -------------------------------------------------
-        // READ CURRENT ROUND
-        // -------------------------------------------------
 
         const snapshot =
             await roundRef.once(
@@ -812,42 +785,22 @@ async function createNewRound(reason) {
             oldRoundId = 0;
         }
 
-        // -------------------------------------------------
-        // NEW ROUND ID
-        // -------------------------------------------------
-
         const newRoundId =
             oldRoundId + 1;
 
-        // -------------------------------------------------
-        // GENERATE CARDS
-        // -------------------------------------------------
-
         const cards =
             generateNineCards();
-
-        // -------------------------------------------------
-        // CALCULATE RESULTS
-        // -------------------------------------------------
 
         const results =
             calculateRoundResults(
                 cards
             );
 
-        // -------------------------------------------------
-        // SERVER TIME
-        // -------------------------------------------------
-
         const now =
             Date.now();
 
         const revealAt =
             now + WAITING_TIME;
-
-        // -------------------------------------------------
-        // ROUND DATA
-        // -------------------------------------------------
 
         const roundData = {
 
@@ -915,20 +868,11 @@ async function createNewRound(reason) {
 
             winner:
                 results.winner
-
         };
-
-        // -------------------------------------------------
-        // SAVE
-        // -------------------------------------------------
 
         await roundRef.set(
             roundData
         );
-
-        // -------------------------------------------------
-        // LOG
-        // -------------------------------------------------
 
         console.log(
             "========================================"
@@ -953,16 +897,12 @@ async function createNewRound(reason) {
 
         console.log(
             "STARTED AT:",
-            new Date(
-                now
-            ).toISOString()
+            new Date(now).toISOString()
         );
 
         console.log(
             "REVEAL AT:",
-            new Date(
-                revealAt
-            ).toISOString()
+            new Date(revealAt).toISOString()
         );
 
         console.log(
@@ -994,10 +934,6 @@ async function createNewRound(reason) {
             "========================================"
         );
 
-        // -------------------------------------------------
-        // SCHEDULE REVEAL
-        // -------------------------------------------------
-
         scheduleReveal(
             String(newRoundId),
             revealAt
@@ -1024,9 +960,7 @@ async function createNewRound(reason) {
 // REVEAL ROUND
 // =====================================================
 
-async function revealRound(
-    roundId
-) {
+async function revealRound(roundId) {
 
     try {
 
@@ -1038,15 +972,9 @@ async function revealRound(
         const latest =
             snapshot.val();
 
-        // -------------------------------------------------
-        // CURRENT ROUND CHECK
-        // -------------------------------------------------
-
         if (
             !latest ||
-            String(
-                latest.round_id
-            ) !==
+            String(latest.round_id) !==
             String(roundId)
         ) {
 
@@ -1056,10 +984,6 @@ async function revealRound(
 
             return false;
         }
-
-        // -------------------------------------------------
-        // ONLY WAITING CAN REVEAL
-        // -------------------------------------------------
 
         if (
             latest.status !==
@@ -1072,10 +996,6 @@ async function revealRound(
 
             return false;
         }
-
-        // -------------------------------------------------
-        // REVEAL
-        // -------------------------------------------------
 
         const revealedAt =
             Date.now();
@@ -1095,7 +1015,7 @@ async function revealRound(
         );
 
         console.log(
-            "CARDS VISIBLE FOR 5 SECONDS"
+            "CARDS VISIBLE FOR 10 SECONDS"
         );
 
         scheduleNextRoundAfterReveal(
@@ -1139,9 +1059,19 @@ function scheduleReveal(
     setTimeout(
         async () => {
 
-            await revealRound(
-                roundId
-            );
+            try {
+
+                await revealRound(
+                    roundId
+                );
+
+            } catch (error) {
+
+                console.error(
+                    "SCHEDULE REVEAL ERROR:",
+                    error
+                );
+            }
 
         },
         delay
@@ -1157,13 +1087,14 @@ function scheduleNextRoundAfterReveal(
     revealedAt
 ) {
 
+    const nextRoundAt =
+        Number(revealedAt) +
+        REVEAL_TIME;
+
     const delay =
         Math.max(
             0,
-            (
-                Number(revealedAt) +
-                REVEAL_TIME
-            ) -
+            nextRoundAt -
             Date.now()
         );
 
@@ -1186,9 +1117,7 @@ function scheduleNextRoundAfterReveal(
 
                 if (
                     !latest ||
-                    String(
-                        latest.round_id
-                    ) !==
+                    String(latest.round_id) !==
                     String(roundId)
                 ) {
 
@@ -1212,7 +1141,7 @@ function scheduleNextRoundAfterReveal(
                 }
 
                 console.log(
-                    `ROUND ${roundId} 5 SECONDS FINISHED`
+                    `ROUND ${roundId} 10 SECONDS FINISHED`
                 );
 
                 console.log(
@@ -1229,7 +1158,6 @@ function scheduleNextRoundAfterReveal(
                     "NEXT ROUND ERROR:",
                     error
                 );
-
             }
 
         },
@@ -1241,11 +1169,9 @@ function scheduleNextRoundAfterReveal(
 // RECONCILER
 // =====================================================
 //
-// Checks Firebase while server is awake.
+// Runs every 1 second while server is awake.
+// Firebase timestamps are used as source of truth.
 //
-// =====================================================
-
-let reconcileRunning = false;
 
 async function reconcileRound() {
 
@@ -1308,7 +1234,6 @@ async function reconcileRound() {
             status === "waiting"
         ) {
 
-            // Invalid reveal time
             if (revealAt <= 0) {
 
                 console.log(
@@ -1322,18 +1247,10 @@ async function reconcileRound() {
                 return;
             }
 
-            // -------------------------------------------------
-            // Still waiting
-            // -------------------------------------------------
-
             if (now < revealAt) {
 
                 return;
             }
-
-            // -------------------------------------------------
-            // Waiting finished
-            // -------------------------------------------------
 
             console.log(
                 `RECONCILE: Round ${roundId} waiting finished`
@@ -1359,7 +1276,6 @@ async function reconcileRound() {
                     round.revealed_at || 0
                 );
 
-            // Missing reveal time
             if (revealedAt <= 0) {
 
                 revealedAt =
@@ -1383,24 +1299,22 @@ async function reconcileRound() {
                 revealedAt +
                 REVEAL_TIME;
 
-            // -------------------------------------------------
-            // 5 seconds finished
-            // -------------------------------------------------
-
-            if (
-                now >= nextRoundAt
-            ) {
-
-                console.log(
-                    `RECONCILE: Round ${roundId} reveal finished`
-                );
-
-                await createNewRound(
-                    "reconcile reveal finished"
-                );
+            if (now < nextRoundAt) {
 
                 return;
             }
+
+            console.log(
+                `RECONCILE: Round ${roundId} 10-second reveal finished`
+            );
+
+            console.log(
+                "RECONCILE: CREATING NEXT ROUND"
+            );
+
+            await createNewRound(
+                "reconcile reveal finished"
+            );
 
             return;
         }
@@ -1431,18 +1345,7 @@ async function reconcileRound() {
 }
 
 // =====================================================
-// STARTUP ROUND RECOVERY
-// =====================================================
-//
-// Important:
-//
-// If server wakes/restarts and the old waiting round
-// has already expired, we DO NOT immediately reveal
-// that old round.
-//
-// We create a fresh round so the user gets a new
-// complete 20-second waiting period.
-//
+// STARTUP RECOVERY
 // =====================================================
 
 async function resumeExistingRound() {
@@ -1465,10 +1368,6 @@ async function resumeExistingRound() {
 
             console.log(
                 "STARTUP: NO EXISTING ROUND"
-            );
-
-            console.log(
-                "STARTUP: CREATING FIRST ROUND"
             );
 
             await createNewRound(
@@ -1529,7 +1428,7 @@ async function resumeExistingRound() {
         );
 
         // =================================================
-        // WAITING - STILL ACTIVE
+        // WAITING STILL ACTIVE
         // =================================================
 
         if (
@@ -1557,12 +1456,8 @@ async function resumeExistingRound() {
         }
 
         // =================================================
-        // WAITING - EXPIRED
+        // WAITING EXPIRED
         // =================================================
-        //
-        // Fresh round is created so the client gets
-        // another full 20-second waiting period.
-        //
 
         if (
             status === "waiting" &&
@@ -1597,9 +1492,7 @@ async function resumeExistingRound() {
                     round.revealed_at || 0
                 );
 
-            if (
-                revealedAt <= 0
-            ) {
+            if (revealedAt <= 0) {
 
                 revealedAt =
                     now;
@@ -1620,10 +1513,7 @@ async function resumeExistingRound() {
                 revealedAt +
                 REVEAL_TIME;
 
-            // -------------------------------------------------
-            // Still inside 5 second reveal
-            // -------------------------------------------------
-
+            // Reveal still active
             if (
                 revealEnd > now
             ) {
@@ -1647,10 +1537,7 @@ async function resumeExistingRound() {
                 return;
             }
 
-            // -------------------------------------------------
-            // Reveal already finished
-            // -------------------------------------------------
-
+            // Reveal finished
             console.log(
                 `STARTUP: Round ${roundId} reveal already finished`
             );
@@ -1672,10 +1559,6 @@ async function resumeExistingRound() {
 
         console.log(
             `STARTUP: Unknown status "${status}"`
-        );
-
-        console.log(
-            "STARTUP: Creating fresh round"
         );
 
         await createNewRound(
@@ -1719,10 +1602,80 @@ app.get(
                 REVEAL_TIME / 1000,
 
             reconciler:
+                "enabled",
+
+            startup_recovery:
                 "enabled"
 
         });
+    }
+);
 
+// =====================================================
+// HEALTH + CURRENT ROUND
+// =====================================================
+
+app.get(
+    "/health",
+    async (req, res) => {
+
+        try {
+
+            const snapshot =
+                await roundRef.once(
+                    "value"
+                );
+
+            const round =
+                snapshot.val();
+
+            res.status(200).json({
+
+                ok: true,
+
+                server:
+                    "running",
+
+                room_id:
+                    ROOM_ID,
+
+                round_id:
+                    round
+                        ? round.round_id
+                        : null,
+
+                round_status:
+                    round
+                        ? round.status
+                        : null,
+
+                waiting_seconds:
+                    WAITING_TIME / 1000,
+
+                reveal_seconds:
+                    REVEAL_TIME / 1000,
+
+                timestamp:
+                    Date.now()
+
+            });
+
+        } catch (error) {
+
+            console.error(
+                "HEALTH ERROR:",
+                error
+            );
+
+            res.status(500).json({
+
+                ok: false,
+
+                error:
+                    error.message
+
+            });
+        }
     }
 );
 
@@ -1788,7 +1741,7 @@ app.get(
 );
 
 // =====================================================
-// START ROUND - ADMIN POST
+// START ROUND - ADMIN
 // =====================================================
 
 app.post(
@@ -1890,81 +1843,169 @@ app.use(
 );
 
 // =====================================================
+// GLOBAL ERROR HANDLER
+// =====================================================
+
+app.use(
+    (error, req, res, next) => {
+
+        console.error(
+            "EXPRESS ERROR:",
+            error
+        );
+
+        if (res.headersSent) {
+            return next(error);
+        }
+
+        res.status(500).json({
+
+            ok: false,
+
+            error:
+                "Internal server error"
+
+        });
+    }
+);
+
+// =====================================================
 // START SERVER
 // =====================================================
 
-app.listen(
-    PORT,
-    "0.0.0.0",
-    async () => {
+const server =
+    app.listen(
+        PORT,
+        "0.0.0.0",
+        async () => {
 
-        console.log(
-            "========================================"
-        );
+            console.log(
+                "========================================"
+            );
 
-        console.log(
-            "TEEN PATTI SERVER STARTED"
-        );
+            console.log(
+                "TEEN PATTI SERVER STARTED"
+            );
 
-        console.log(
-            `PORT: ${PORT}`
-        );
+            console.log(
+                `PORT: ${PORT}`
+            );
 
-        console.log(
-            `ROOM: ${ROOM_ID}`
-        );
+            console.log(
+                `ROOM: ${ROOM_ID}`
+            );
 
-        console.log(
-            "FIREBASE ADMIN: CONNECTED"
-        );
+            console.log(
+                "FIREBASE ADMIN: CONNECTED"
+            );
 
-        console.log(
-            "WAITING TIME: 20 SECONDS"
-        );
+            console.log(
+                "WAITING TIME: 20 SECONDS"
+            );
 
-        console.log(
-            "REVEAL TIME: 5 SECONDS"
-        );
+            console.log(
+                "REVEAL TIME: 10 SECONDS"
+            );
 
-        console.log(
-            "WINNER CALCULATION: ENABLED"
-        );
+            console.log(
+                "WINNER CALCULATION: ENABLED"
+            );
 
-        console.log(
-            "ROUND RECONCILER: ENABLED"
-        );
+            console.log(
+                "ROUND RECONCILER: ENABLED"
+            );
 
-        console.log(
-            "STARTUP RECOVERY: ENABLED"
-        );
+            console.log(
+                "STARTUP RECOVERY: ENABLED"
+            );
 
-        console.log(
-            "========================================"
-        );
+            console.log(
+                "SLEEP RECOVERY: ENABLED"
+            );
 
-        try {
+            console.log(
+                "========================================"
+            );
 
-            await resumeExistingRound();
+            try {
 
-        } catch (error) {
+                await resumeExistingRound();
 
-            console.error(
-                "STARTUP ROUND ERROR:",
-                error
+            } catch (error) {
+
+                console.error(
+                    "STARTUP ROUND ERROR:",
+                    error
+                );
+            }
+
+            // =================================================
+            // RECONCILER
+            // =================================================
+
+            setInterval(
+                () => {
+
+                    reconcileRound()
+                        .catch(error => {
+
+                            console.error(
+                                "RECONCILER UNHANDLED ERROR:",
+                                error
+                            );
+
+                        });
+
+                },
+                RECONCILE_INTERVAL
+            );
+
+            console.log(
+                "RECONCILER STARTED"
             );
         }
+    );
 
-        // -------------------------------------------------
-        // CONTINUOUS RECONCILER
-        // -------------------------------------------------
+// =====================================================
+// GRACEFUL SHUTDOWN
+// =====================================================
 
-        setInterval(
-            reconcileRound,
-            RECONCILE_INTERVAL
+async function shutdown(signal) {
+
+    console.log(
+        `${signal} RECEIVED`
+    );
+
+    try {
+
+        server.close(
+            () => {
+
+                console.log(
+                    "HTTP SERVER CLOSED"
+                );
+
+                process.exit(0);
+            }
         );
 
-        console.log(
-            "RECONCILER STARTED"
+    } catch (error) {
+
+        console.error(
+            "SHUTDOWN ERROR:",
+            error
         );
+
+        process.exit(1);
     }
+}
+
+process.on(
+    "SIGTERM",
+    () => shutdown("SIGTERM")
+);
+
+process.on(
+    "SIGINT",
+    () => shutdown("SIGINT")
 );
