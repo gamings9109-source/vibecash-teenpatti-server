@@ -230,9 +230,52 @@ async function createNewRound() {
     // -------------------------------------------------
     // REVEAL AFTER 10 SECONDS
     // -------------------------------------------------
+// =================================================
+// REVEAL AFTER 20 SECONDS
+// =================================================
 
-    const revealAt =
-        now + 10000;
+setTimeout(
+    async () => {
+
+        try {
+
+            const latestSnapshot =
+                await roundRef.once("value");
+
+            const latest =
+                latestSnapshot.val();
+
+            if (
+                latest &&
+                String(latest.round_id) ===
+                String(newRoundId)
+            ) {
+
+                await roundRef.update({
+
+                    status: "reveal",
+
+                    revealed_at: Date.now()
+
+                });
+
+                console.log(
+                    `Round ${newRoundId} REVEALED`
+                );
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Reveal error:",
+                error
+            );
+        }
+
+    },
+    20000
+);
+    
 
     // -------------------------------------------------
     // SAVE ROUND
