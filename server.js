@@ -12,16 +12,21 @@ const ROOM_ID = "567943";
 // FIREBASE ADMIN
 // =====================================================
 
-if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is missing");
-}
+const fs = require("fs");
 
-if (!process.env.FIREBASE_DATABASE_URL) {
-    throw new Error("FIREBASE_DATABASE_URL is missing");
+const serviceAccountPath =
+    "/etc/secrets/firebase-service-account.json";
+
+if (!fs.existsSync(serviceAccountPath)) {
+    throw new Error("Firebase service account file is missing");
 }
 
 const serviceAccount =
-    JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    JSON.parse(
+        fs.readFileSync(serviceAccountPath, "utf8")
+    );
+
+
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
