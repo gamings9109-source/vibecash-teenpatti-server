@@ -1,14 +1,13 @@
-
 {
-  "name": "teen-patti-backend",
+  "name": "vibecash-teenpatti-server",
   "version": "1.0.0",
+  "description": "Teen Patti authoritative game server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.19.2",
-    "firebase-admin": "^12.0.0"
+    "express": "^5.1.0",
+    "firebase-admin": "^13.5.0"
   }
 }
