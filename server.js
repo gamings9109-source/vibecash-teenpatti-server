@@ -1,37 +1,83 @@
 const express = require("express");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-
-const app = express();
-app.use(express.json());
-
-const PORT = process.env.PORT || 10000;
-const ROOM_ID = "567943";
-
-// =====================================================
-// FIREBASE ADMIN
-// =====================================================
-
 const fs = require("fs");
 
-const serviceAccountPath =
+const app = express();
+
+app.use(express.json());
+
+// =====================================================
+// SERVER CONFIG
+// =====================================================
+
+const PORT = process.env.PORT || 10000;
+
+const ROOM_ID = "567943";
+
+const SERVICE_ACCOUNT_PATH =
     "/etc/secrets/firebase-service-account.json";
 
-if (!fs.existsSync(serviceAccountPath)) {
-    throw new Error("Firebase service account file is missing");
+// =====================================================
+// CHECK FIREBASE CONFIG
+// =====================================================
+
+if (!process.env.FIREBASE_DATABASE_URL) {
+    throw new Error(
+        "FIREBASE_DATABASE_URL environment variable is missing"
+    );
 }
 
-const serviceAccount =
-    JSON.parse(
-        fs.readFileSync(serviceAccountPath, "utf8")
+// =====================================================
+// READ FIREBASE SERVICE ACCOUNT
+// =====================================================
+
+if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
+    throw new Error(
+        "Firebase service account file is missing: " +
+        SERVICE_ACCOUNT_PATH
+    );
+}
+
+let serviceAccount;
+
+try {
+
+    const jsonText =
+        fs.readFileSync(
+            SERVICE_ACCOUNT_PATH,
+            "utf8"
+        );
+
+    serviceAccount =
+        JSON.parse(jsonText);
+
+} catch (error) {
+
+    throw new Error(
+        "Firebase service account JSON is invalid: " +
+        error.message
     );
 
+}
 
+// =====================================================
+// FIREBASE ADMIN INITIALIZE
+// =====================================================
 
 admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL
+
+    credential:
+        admin.credential.cert(serviceAccount),
+
+    databaseURL:
+        process.env.FIREBASE_DATABASE_URL
+
 });
+
+// =====================================================
+// FIREBASE DATABASE
+// =====================================================
 
 const db = admin.database();
 
@@ -68,30 +114,51 @@ const ranks = [
     "K"
 ];
 
+// =====================================================
+// CREATE DECK
+// =====================================================
+
 function createDeck() {
+
     const deck = [];
 
     for (const suit of suits) {
+
         for (const rank of ranks) {
-            deck.push(`${rank}|${suit}`);
+
+            deck.push(
+                `${rank}|${suit}`
+            );
+
         }
+
     }
 
     return deck;
 }
 
 // =====================================================
-// SECURE RANDOM SHUFFLE
+// SECURE SHUFFLE
 // =====================================================
 
 function shuffle(deck) {
 
-    for (let i = deck.length - 1; i > 0; i--) {
+    for (
+        let i = deck.length - 1;
+        i > 0;
+        i--
+    ) {
 
-        const j = crypto.randomInt(0, i + 1);
+        const j =
+            crypto.randomInt(
+                0,
+                i + 1
+            );
 
         const temp = deck[i];
+
         deck[i] = deck[j];
+
         deck[j] = temp;
     }
 
@@ -99,16 +166,18 @@ function shuffle(deck) {
 }
 
 // =====================================================
-// GENERATE 9 CARDS
+// GENERATE 9 UNIQUE CARDS
 // =====================================================
 
 function generateNineCards() {
 
-    const deck = createDeck();
+    const deck =
+        createDeck();
 
     shuffle(deck);
 
     return {
+
         A1: deck[0],
         A2: deck[1],
         A3: deck[2],
@@ -120,6 +189,7 @@ function generateNineCards() {
         C1: deck[6],
         C2: deck[7],
         C3: deck[8]
+
     };
 }
 
@@ -129,11 +199,75 @@ function generateNineCards() {
 
 app.get("/", (req, res) => {
 
-    res.json({
+    res.status(200).json({
+
         ok: true,
-        server: "Teen Patti Server",
-        status: "running"
+
+        server:
+            "Teen Patti Server",
+
+        status:
+            "running",
+
+        room_id:
+            ROOM_ID
+
     });
+
+});
+
+// =====================================================
+// GET CURRENT ROUND
+// =====================================================
+
+app.get("/round", async (req, res) => {
+
+    try {
+
+        const snapshot =
+            await roundRef.once("value");
+
+        const data =
+            snapshot.val();
+
+        if (!data) {
+
+            return res.status(404).json({
+
+                ok: false,
+
+                error:
+                    "No round found"
+
+            });
+
+        }
+
+        res.json({
+
+            ok: true,
+
+            round: data
+
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Get round error:",
+            error
+        );
+
+        res.status(500).json({
+
+            ok: false,
+
+            error:
+                error.message
+
+        });
+
+    }
 
 });
 
@@ -145,127 +279,252 @@ app.post("/start-round", async (req, res) => {
 
     try {
 
-        // Optional protection
-        const secret = process.env.ADMIN_SECRET;
+        // =================================================
+        // ADMIN SECRET CHECK
+        // =================================================
 
-        if (secret) {
+        const secret =
+            process.env.ADMIN_SECRET;
 
-            const suppliedSecret =
-                req.headers["x-admin-secret"];
+        if (!secret) {
 
-            if (suppliedSecret !== secret) {
+            return res.status(500).json({
 
-                return res.status(401).json({
-                    ok: false,
-                    error: "Unauthorized"
-                });
+                ok: false,
 
-            }
+                error:
+                    "ADMIN_SECRET is not configured"
+
+            });
+
         }
 
-        // Get current round
-        const snapshot = await roundRef.once("value");
+        const suppliedSecret =
+            req.headers["x-admin-secret"];
 
-        const current = snapshot.val() || {};
+        if (
+            !suppliedSecret ||
+            suppliedSecret !== secret
+        ) {
 
-        let oldRoundId = Number(current.round_id || 0);
+            return res.status(401).json({
 
-        if (!Number.isFinite(oldRoundId)) {
+                ok: false,
+
+                error:
+                    "Unauthorized"
+
+            });
+
+        }
+
+        // =================================================
+        // READ CURRENT ROUND
+        // =================================================
+
+        const snapshot =
+            await roundRef.once("value");
+
+        const current =
+            snapshot.val() || {};
+
+        let oldRoundId =
+            Number(
+                current.round_id || 0
+            );
+
+        if (
+            !Number.isFinite(
+                oldRoundId
+            )
+        ) {
+
             oldRoundId = 0;
+
         }
 
-        const newRoundId = oldRoundId + 1;
+        // =================================================
+        // NEW ROUND ID
+        // =================================================
 
-        // Generate cards on SERVER
-        const cards = generateNineCards();
+        const newRoundId =
+            oldRoundId + 1;
 
-        const now = Date.now();
+        // =================================================
+        // GENERATE CARDS ON SERVER
+        // =================================================
 
-        // 10 second waiting period
-        const revealAt = now + 10000;
+        const cards =
+            generateNineCards();
 
-        // Write complete round
+        // =================================================
+        // SERVER TIME
+        // =================================================
+
+        const now =
+            Date.now();
+
+        // =================================================
+        // WAIT 10 SECONDS
+        // =================================================
+
+        const revealAt =
+            now + 10000;
+
+        // =================================================
+        // SAVE ROUND TO FIREBASE
+        // =================================================
+
         await roundRef.set({
 
-            round_id: String(newRoundId),
+            round_id:
+                String(newRoundId),
 
-            status: "waiting",
+            status:
+                "waiting",
 
-            started_at: now,
+            started_at:
+                now,
 
-            reveal_at: revealAt,
+            reveal_at:
+                revealAt,
 
-            cards: cards
+            cards: {
+
+                A1: cards.A1,
+                A2: cards.A2,
+                A3: cards.A3,
+
+                B1: cards.B1,
+                B2: cards.B2,
+                B3: cards.B3,
+
+                C1: cards.C1,
+                C2: cards.C2,
+                C3: cards.C3
+
+            }
 
         });
 
         console.log(
-            `Round ${newRoundId} created`
+            "================================="
         );
 
-        console.log(cards);
+        console.log(
+            `Round ${newRoundId} CREATED`
+        );
 
-        // After 10 seconds reveal
-        setTimeout(async () => {
+        console.log(
+            "Reveal at:",
+            new Date(
+                revealAt
+            ).toISOString()
+        );
 
-            try {
+        console.log(
+            "================================="
+        );
 
-                const latest =
-                    await roundRef.once("value");
+        // =================================================
+        // REVEAL AFTER 10 SECONDS
+        // =================================================
 
-                const latestData =
-                    latest.val();
+        setTimeout(
+            async () => {
 
-                if (
-                    latestData &&
-                    String(latestData.round_id) ===
-                    String(newRoundId)
-                ) {
+                try {
 
-                    await roundRef.update({
-                        status: "reveal",
-                        revealed_at: Date.now()
-                    });
+                    const latestSnapshot =
+                        await roundRef.once(
+                            "value"
+                        );
 
-                    console.log(
-                        `Round ${newRoundId} revealed`
+                    const latest =
+                        latestSnapshot.val();
+
+                    // -----------------------------------------
+                    // Only reveal if this is still
+                    // the current round
+                    // -----------------------------------------
+
+                    if (
+                        latest &&
+                        String(
+                            latest.round_id
+                        ) ===
+                        String(
+                            newRoundId
+                        )
+                    ) {
+
+                        await roundRef.update({
+
+                            status:
+                                "reveal",
+
+                            revealed_at:
+                                Date.now()
+
+                        });
+
+                        console.log(
+                            `Round ${newRoundId} REVEALED`
+                        );
+
+                    }
+
+                } catch (error) {
+
+                    console.error(
+                        "Reveal error:",
+                        error
                     );
+
                 }
 
-            } catch (error) {
+            },
+            10000
+        );
 
-                console.error(
-                    "Reveal error:",
-                    error
-                );
+        // =================================================
+        // RESPONSE
+        // =================================================
 
-            }
-
-        }, 10000);
-
-        res.json({
+        res.status(200).json({
 
             ok: true,
 
-            round_id: String(newRoundId),
+            room_id:
+                ROOM_ID,
 
-            status: "waiting",
+            round_id:
+                String(newRoundId),
 
-            reveal_at: revealAt,
+            status:
+                "waiting",
 
-            cards: cards
+            started_at:
+                now,
+
+            reveal_at:
+                revealAt
 
         });
 
     } catch (error) {
 
-        console.error(error);
+        console.error(
+            "Start round error:",
+            error
+        );
 
         res.status(500).json({
 
             ok: false,
 
-            error: error.message
+            error:
+                error.message
 
         });
 
@@ -274,13 +533,54 @@ app.post("/start-round", async (req, res) => {
 });
 
 // =====================================================
-// SERVER
+// 404
 // =====================================================
 
-app.listen(PORT, "0.0.0.0", () => {
+app.use((req, res) => {
 
-    console.log(
-        `Teen Patti Server running on port ${PORT}`
-    );
+    res.status(404).json({
+
+        ok: false,
+
+        error:
+            "Endpoint not found"
+
+    });
 
 });
+
+// =====================================================
+// START SERVER
+// =====================================================
+
+app.listen(
+    PORT,
+    "0.0.0.0",
+    () => {
+
+        console.log(
+            "================================="
+        );
+
+        console.log(
+            "Teen Patti Server Started"
+        );
+
+        console.log(
+            `Port: ${PORT}`
+        );
+
+        console.log(
+            `Room: ${ROOM_ID}`
+        );
+
+        console.log(
+            "Firebase Admin: Connected"
+        );
+
+        console.log(
+            "================================="
+        );
+
+    }
+);
