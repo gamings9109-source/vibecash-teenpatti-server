@@ -15,10 +15,10 @@ const PORT = process.env.PORT || 10000;
 
 const ROOM_ID = "567943";
 
-// 20 seconds countdown
+// 20 seconds cards hidden
 const WAITING_TIME = 20000;
 
-// Cards 5 seconds visible
+// 5 seconds cards visible
 const REVEAL_TIME = 5000;
 
 const SERVICE_ACCOUNT_PATH =
@@ -41,7 +41,7 @@ if (!process.env.ADMIN_SECRET) {
 }
 
 // =====================================================
-// CHECK SERVICE ACCOUNT FILE
+// CHECK SERVICE ACCOUNT
 // =====================================================
 
 if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
@@ -134,6 +134,28 @@ const ranks = [
 ];
 
 // =====================================================
+// RANK VALUES
+// =====================================================
+
+const rankValues = {
+
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+    "9": 9,
+    "10": 10,
+    "J": 11,
+    "Q": 12,
+    "K": 13,
+    "A": 14
+
+};
+
+// =====================================================
 // CREATE DECK
 // =====================================================
 
@@ -216,6 +238,538 @@ function generateNineCards() {
 }
 
 // =====================================================
+// PARSE CARD
+// =====================================================
+
+function parseCard(card) {
+
+    const parts =
+        String(card).split("|");
+
+    return {
+
+        rank:
+            parts[0],
+
+        suit:
+            parts[1]
+
+    };
+}
+
+// =====================================================
+// GET CARD VALUES
+// =====================================================
+
+function getCardValues(cards) {
+
+    return cards
+        .map(card => {
+
+            const parsed =
+                parseCard(card);
+
+            return rankValues[
+                parsed.rank
+            ];
+
+        })
+        .sort(
+            (a, b) => b - a
+        );
+}
+
+// =====================================================
+// CHECK THREE OF A KIND / TRAIL
+// =====================================================
+
+function isTrail(values) {
+
+    return (
+        values[0] === values[1] &&
+        values[1] === values[2]
+    );
+}
+
+// =====================================================
+// CHECK FLUSH / COLOR
+// =====================================================
+
+function isColor(cards) {
+
+    const parsed =
+        cards.map(parseCard);
+
+    return (
+        parsed[0].suit ===
+        parsed[1].suit &&
+        parsed[1].suit ===
+        parsed[2].suit
+    );
+}
+
+// =====================================================
+// CHECK SEQUENCE
+// =====================================================
+
+function getSequenceHigh(values) {
+
+    const sorted =
+        [...values].sort(
+            (a, b) => a - b
+        );
+
+    // A-2-3 is lowest sequence
+    if (
+        sorted[0] === 2 &&
+        sorted[1] === 3 &&
+        sorted[2] === 14
+    ) {
+
+        return 3;
+    }
+
+    // Normal sequence
+    if (
+        sorted[1] ===
+            sorted[0] + 1 &&
+        sorted[2] ===
+            sorted[1] + 1
+    ) {
+
+        return sorted[2];
+    }
+
+    return null;
+}
+
+// =====================================================
+// CHECK PAIR
+// =====================================================
+
+function getPairInfo(values) {
+
+    if (
+        values[0] === values[1]
+    ) {
+
+        return {
+
+            pair:
+                values[0],
+
+            kicker:
+                values[2]
+
+        };
+    }
+
+    if (
+        values[1] === values[2]
+    ) {
+
+        return {
+
+            pair:
+                values[1],
+
+            kicker:
+                values[0]
+
+        };
+    }
+
+    return null;
+}
+
+// =====================================================
+// CALCULATE HAND
+// =====================================================
+//
+// Priority:
+//
+// 6 = Trail
+// 5 = Pure Sequence
+// 4 = Sequence
+// 3 = Color
+// 2 = Pair
+// 1 = High Card
+//
+// =====================================================
+
+function calculateHand(cards) {
+
+    const values =
+        getCardValues(cards);
+
+    const trail =
+        isTrail(values);
+
+    const color =
+        isColor(cards);
+
+    const sequenceHigh =
+        getSequenceHigh(values);
+
+    const pair =
+        getPairInfo(values);
+
+    // -------------------------------------------------
+    // TRAIL
+    // -------------------------------------------------
+
+    if (trail) {
+
+        return {
+
+            category:
+                "Trail",
+
+            category_rank:
+                6,
+
+            compare:
+                [
+                    values[0]
+                ]
+
+        };
+    }
+
+    // -------------------------------------------------
+    // PURE SEQUENCE
+    // -------------------------------------------------
+
+    if (
+        color &&
+        sequenceHigh !== null
+    ) {
+
+        return {
+
+            category:
+                "Pure Sequence",
+
+            category_rank:
+                5,
+
+            compare:
+                [
+                    sequenceHigh
+                ]
+
+        };
+    }
+
+    // -------------------------------------------------
+    // SEQUENCE
+    // -------------------------------------------------
+
+    if (
+        sequenceHigh !== null
+    ) {
+
+        return {
+
+            category:
+                "Sequence",
+
+            category_rank:
+                4,
+
+            compare:
+                [
+                    sequenceHigh
+                ]
+
+        };
+    }
+
+    // -------------------------------------------------
+    // COLOR
+    // -------------------------------------------------
+
+    if (color) {
+
+        return {
+
+            category:
+                "Color",
+
+            category_rank:
+                3,
+
+            compare:
+                values
+
+        };
+    }
+
+    // -------------------------------------------------
+    // PAIR
+    // -------------------------------------------------
+
+    if (pair) {
+
+        return {
+
+            category:
+                "Pair",
+
+            category_rank:
+                2,
+
+            compare:
+                [
+                    pair.pair,
+                    pair.kicker
+                ]
+
+        };
+    }
+
+    // -------------------------------------------------
+    // HIGH CARD
+    // -------------------------------------------------
+
+    return {
+
+        category:
+            "High Card",
+
+        category_rank:
+            1,
+
+        compare:
+            values
+
+    };
+}
+
+// =====================================================
+// COMPARE TWO HANDS
+// =====================================================
+//
+// Returns:
+//
+// > 0 = first hand wins
+// < 0 = second hand wins
+// = 0 = tie
+//
+// =====================================================
+
+function compareHands(first, second) {
+
+    if (
+        first.category_rank !==
+        second.category_rank
+    ) {
+
+        return (
+            first.category_rank -
+            second.category_rank
+        );
+    }
+
+    const firstCompare =
+        first.compare || [];
+
+    const secondCompare =
+        second.compare || [];
+
+    const length =
+        Math.max(
+            firstCompare.length,
+            secondCompare.length
+        );
+
+    for (
+        let i = 0;
+        i < length;
+        i++
+    ) {
+
+        const a =
+            firstCompare[i] || 0;
+
+        const b =
+            secondCompare[i] || 0;
+
+        if (a !== b) {
+
+            return a - b;
+        }
+    }
+
+    return 0;
+}
+
+// =====================================================
+// CALCULATE A/B/C RESULTS + WINNER
+// =====================================================
+
+function calculateRoundResults(cards) {
+
+    const handA =
+        calculateHand([
+            cards.A1,
+            cards.A2,
+            cards.A3
+        ]);
+
+    const handB =
+        calculateHand([
+            cards.B1,
+            cards.B2,
+            cards.B3
+        ]);
+
+    const handC =
+        calculateHand([
+            cards.C1,
+            cards.C2,
+            cards.C3
+        ]);
+
+    const hands = {
+
+        A: handA,
+        B: handB,
+        C: handC
+
+    };
+
+    // -------------------------------------------------
+    // FIND BEST HAND
+    // -------------------------------------------------
+
+    let winner =
+        "A";
+
+    let bestHand =
+        handA;
+
+    const compareB =
+        compareHands(
+            handB,
+            bestHand
+        );
+
+    if (compareB > 0) {
+
+        winner =
+            "B";
+
+        bestHand =
+            handB;
+    }
+
+    const compareC =
+        compareHands(
+            handC,
+            bestHand
+        );
+
+    if (compareC > 0) {
+
+        winner =
+            "C";
+
+        bestHand =
+            handC;
+    }
+
+    // -------------------------------------------------
+    // CHECK TIE
+    // -------------------------------------------------
+
+    const tiedPlayers = [];
+
+    if (
+        compareHands(
+            handA,
+            bestHand
+        ) === 0
+    ) {
+
+        tiedPlayers.push("A");
+    }
+
+    if (
+        compareHands(
+            handB,
+            bestHand
+        ) === 0
+    ) {
+
+        tiedPlayers.push("B");
+    }
+
+    if (
+        compareHands(
+            handC,
+            bestHand
+        ) === 0
+    ) {
+
+        tiedPlayers.push("C");
+    }
+
+    if (tiedPlayers.length > 1) {
+
+        winner =
+            tiedPlayers.join(",");
+
+    }
+
+    return {
+
+        A: {
+
+            category:
+                handA.category,
+
+            category_rank:
+                handA.category_rank,
+
+            compare:
+                handA.compare
+
+        },
+
+        B: {
+
+            category:
+                handB.category,
+
+            category_rank:
+                handB.category_rank,
+
+            compare:
+                handB.compare
+
+        },
+
+        C: {
+
+            category:
+                handC.category,
+
+            category_rank:
+                handC.category_rank,
+
+            compare:
+                handC.compare
+
+        },
+
+        winner:
+            winner
+
+    };
+}
+
+// =====================================================
 // CREATE NEW ROUND
 // =====================================================
 
@@ -226,7 +780,9 @@ async function createNewRound() {
     // -------------------------------------------------
 
     const snapshot =
-        await roundRef.once("value");
+        await roundRef.once(
+            "value"
+        );
 
     const current =
         snapshot.val() || {};
@@ -241,7 +797,6 @@ async function createNewRound() {
     ) {
 
         oldRoundId = 0;
-
     }
 
     // -------------------------------------------------
@@ -252,23 +807,27 @@ async function createNewRound() {
         oldRoundId + 1;
 
     // -------------------------------------------------
-    // GENERATE COMPLETELY NEW CARDS
+    // GENERATE NEW CARDS
     // -------------------------------------------------
 
     const cards =
         generateNineCards();
 
     // -------------------------------------------------
-    // CURRENT SERVER TIME
+    // CALCULATE RESULTS
+    // -------------------------------------------------
+
+    const results =
+        calculateRoundResults(
+            cards
+        );
+
+    // -------------------------------------------------
+    // SERVER TIME
     // -------------------------------------------------
 
     const now =
         Date.now();
-
-    // -------------------------------------------------
-    // REVEAL TIME
-    // 20 SECONDS FROM NOW
-    // -------------------------------------------------
 
     const revealAt =
         now + WAITING_TIME;
@@ -305,7 +864,52 @@ async function createNewRound() {
             C2: cards.C2,
             C3: cards.C3
 
-        }
+        },
+
+        // -------------------------------------------------
+        // RIBBON RESULTS
+        // -------------------------------------------------
+
+        results: {
+
+            A: {
+
+                category:
+                    results.A.category,
+
+                category_rank:
+                    results.A.category_rank
+
+            },
+
+            B: {
+
+                category:
+                    results.B.category,
+
+                category_rank:
+                    results.B.category_rank
+
+            },
+
+            C: {
+
+                category:
+                    results.C.category,
+
+                category_rank:
+                    results.C.category_rank
+
+            }
+
+        },
+
+        // -------------------------------------------------
+        // WINNER
+        // -------------------------------------------------
+
+        winner:
+            results.winner
 
     };
 
@@ -316,6 +920,10 @@ async function createNewRound() {
     await roundRef.set(
         roundData
     );
+
+    // -------------------------------------------------
+    // LOG
+    // -------------------------------------------------
 
     console.log(
         "========================================"
@@ -330,7 +938,7 @@ async function createNewRound() {
     );
 
     console.log(
-        "20 SECOND COUNTDOWN STARTED"
+        "WAITING: 20 SECONDS"
     );
 
     console.log(
@@ -338,6 +946,26 @@ async function createNewRound() {
         new Date(
             revealAt
         ).toISOString()
+    );
+
+    console.log(
+        "A:",
+        results.A.category
+    );
+
+    console.log(
+        "B:",
+        results.B.category
+    );
+
+    console.log(
+        "C:",
+        results.C.category
+    );
+
+    console.log(
+        "WINNER:",
+        results.winner
     );
 
     console.log(
@@ -350,7 +978,7 @@ async function createNewRound() {
     );
 
     // -------------------------------------------------
-    // START 20 SECOND TIMER
+    // SCHEDULE REVEAL
     // -------------------------------------------------
 
     scheduleReveal(
@@ -385,10 +1013,6 @@ function scheduleReveal(
 
             try {
 
-                // -------------------------------------
-                // READ LATEST ROUND
-                // -------------------------------------
-
                 const snapshot =
                     await roundRef.once(
                         "value"
@@ -398,8 +1022,7 @@ function scheduleReveal(
                     snapshot.val();
 
                 // -------------------------------------
-                // MAKE SURE THIS IS STILL
-                // THE CURRENT ROUND
+                // CURRENT ROUND CHECK
                 // -------------------------------------
 
                 if (
@@ -418,7 +1041,7 @@ function scheduleReveal(
                 }
 
                 // -------------------------------------
-                // ONLY REVEAL IF STILL WAITING
+                // ONLY WAITING CAN REVEAL
                 // -------------------------------------
 
                 if (
@@ -434,7 +1057,7 @@ function scheduleReveal(
                 }
 
                 // -------------------------------------
-                // CHANGE TO REVEAL
+                // REVEAL
                 // -------------------------------------
 
                 await roundRef.update({
@@ -452,12 +1075,11 @@ function scheduleReveal(
                 );
 
                 console.log(
-                    "CARDS ARE VISIBLE FOR 5 SECONDS"
+                    "CARDS VISIBLE FOR 5 SECONDS"
                 );
 
                 // -------------------------------------
-                // AFTER 5 SECONDS
-                // CREATE NEXT ROUND
+                // AFTER 5 SEC NEXT ROUND
                 // -------------------------------------
 
                 setTimeout(
@@ -473,10 +1095,6 @@ function scheduleReveal(
                             const latestRound =
                                 latestSnapshot.val();
 
-                            // -----------------------------
-                            // CHECK SAME ROUND
-                            // -----------------------------
-
                             if (
                                 !latestRound ||
                                 String(
@@ -486,15 +1104,11 @@ function scheduleReveal(
                             ) {
 
                                 console.log(
-                                    `Round ${roundId} is no longer current`
+                                    `Round ${roundId} no longer current`
                                 );
 
                                 return;
                             }
-
-                            // -----------------------------
-                            // CREATE NEXT ROUND
-                            // -----------------------------
 
                             console.log(
                                 `ROUND ${roundId} 5 SECONDS FINISHED`
@@ -534,7 +1148,7 @@ function scheduleReveal(
 }
 
 // =====================================================
-// RESUME EXISTING ROUND AFTER SERVER RESTART
+// RESUME EXISTING ROUND
 // =====================================================
 
 async function resumeExistingRound() {
@@ -606,7 +1220,7 @@ async function resumeExistingRound() {
         );
 
         // -------------------------------------------------
-        // WAITING ROUND
+        // WAITING
         // -------------------------------------------------
 
         if (
@@ -627,7 +1241,7 @@ async function resumeExistingRound() {
         }
 
         // -------------------------------------------------
-        // WAITING BUT TIMER ALREADY FINISHED
+        // WAITING BUT TIME FINISHED
         // -------------------------------------------------
 
         if (
@@ -666,7 +1280,8 @@ async function resumeExistingRound() {
                             latest &&
                             String(
                                 latest.round_id
-                            ) === roundId
+                            ) ===
+                            roundId
                         ) {
 
                             await createNewRound();
@@ -714,7 +1329,7 @@ async function resumeExistingRound() {
                 );
 
             console.log(
-                `Reveal already active. Next round in ${delay} ms`
+                `Reveal active. Next round in ${delay} ms`
             );
 
             setTimeout(
@@ -734,7 +1349,8 @@ async function resumeExistingRound() {
                             latest &&
                             String(
                                 latest.round_id
-                            ) === roundId &&
+                            ) ===
+                            roundId &&
                             latest.status ===
                             "reveal"
                         ) {
@@ -760,7 +1376,7 @@ async function resumeExistingRound() {
         }
 
         // -------------------------------------------------
-        // UNKNOWN STATUS
+        // UNKNOWN
         // -------------------------------------------------
 
         console.log(
@@ -768,7 +1384,7 @@ async function resumeExistingRound() {
         );
 
         console.log(
-            "Creating a fresh round..."
+            "Creating fresh round..."
         );
 
         await createNewRound();
@@ -897,10 +1513,6 @@ app.post(
                     "x-admin-secret"
                 ];
 
-            // -----------------------------------------
-            // CHECK SECRET
-            // -----------------------------------------
-
             if (
                 !suppliedSecret ||
                 suppliedSecret !== secret
@@ -916,10 +1528,6 @@ app.post(
                 });
 
             }
-
-            // -----------------------------------------
-            // CREATE ROUND
-            // -----------------------------------------
 
             const result =
                 await createNewRound();
@@ -943,82 +1551,6 @@ app.post(
 
             console.error(
                 "Start round error:",
-                error
-            );
-
-            res.status(500).json({
-
-                ok: false,
-
-                error:
-                    error.message
-
-            });
-
-        }
-
-    }
-);
-
-// =====================================================
-// TEMPORARY BROWSER START
-// =====================================================
-//
-// TEST ONLY.
-//
-// Example:
-// /test-start-round?secret=YOUR_SECRET
-//
-// After testing remove this endpoint.
-// =====================================================
-
-app.get(
-    "/test-start-round",
-    async (req, res) => {
-
-        try {
-
-            const secret =
-                process.env.ADMIN_SECRET;
-
-            if (
-                req.query.secret !==
-                secret
-            ) {
-
-                return res.status(401).json({
-
-                    ok: false,
-
-                    error:
-                        "Unauthorized"
-
-                });
-
-            }
-
-            const result =
-                await createNewRound();
-
-            res.status(200).json({
-
-                ok: true,
-
-                message:
-                    "Test round created",
-
-                room_id:
-                    ROOM_ID,
-
-                round:
-                    result
-
-            });
-
-        } catch (error) {
-
-            console.error(
-                "Test round error:",
                 error
             );
 
@@ -1093,12 +1625,12 @@ app.listen(
         );
 
         console.log(
-            "========================================"
+            "WINNER CALCULATION: ENABLED"
         );
 
-        // ---------------------------------------------
-        // RESUME / START ROUND
-        // ---------------------------------------------
+        console.log(
+            "========================================"
+        );
 
         await resumeExistingRound();
 
