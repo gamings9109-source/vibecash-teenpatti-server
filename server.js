@@ -12,13 +12,20 @@ app.use(express.json());
 // =====================================================
 
 const PORT = process.env.PORT || 10000;
+
 const ROOM_ID = "567943";
+
+// 20 seconds countdown
+const WAITING_TIME = 20000;
+
+// Cards 5 seconds visible
+const REVEAL_TIME = 5000;
 
 const SERVICE_ACCOUNT_PATH =
     "/etc/secrets/firebase-service-account.json";
 
 // =====================================================
-// CHECK FIREBASE DATABASE URL
+// CHECK ENVIRONMENT
 // =====================================================
 
 if (!process.env.FIREBASE_DATABASE_URL) {
@@ -27,8 +34,14 @@ if (!process.env.FIREBASE_DATABASE_URL) {
     );
 }
 
+if (!process.env.ADMIN_SECRET) {
+    throw new Error(
+        "ADMIN_SECRET environment variable is missing"
+    );
+}
+
 // =====================================================
-// CHECK FIREBASE SERVICE ACCOUNT FILE
+// CHECK SERVICE ACCOUNT FILE
 // =====================================================
 
 if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
@@ -61,7 +74,6 @@ try {
         "Firebase service account JSON is invalid: " +
         error.message
     );
-
 }
 
 // =====================================================
@@ -122,7 +134,7 @@ const ranks = [
 ];
 
 // =====================================================
-// CREATE 52 CARD DECK
+// CREATE DECK
 // =====================================================
 
 function createDeck() {
@@ -145,7 +157,7 @@ function createDeck() {
 }
 
 // =====================================================
-// SECURE RANDOM SHUFFLE
+// SECURE SHUFFLE
 // =====================================================
 
 function shuffle(deck) {
@@ -170,7 +182,6 @@ function shuffle(deck) {
 
         deck[j] =
             temp;
-
     }
 
     return deck;
@@ -215,9 +226,7 @@ async function createNewRound() {
     // -------------------------------------------------
 
     const snapshot =
-        await roundRef.once(
-            "value"
-        );
+        await roundRef.once("value");
 
     const current =
         snapshot.val() || {};
@@ -228,9 +237,7 @@ async function createNewRound() {
         );
 
     if (
-        !Number.isFinite(
-            oldRoundId
-        )
+        !Number.isFinite(oldRoundId)
     ) {
 
         oldRoundId = 0;
@@ -245,31 +252,32 @@ async function createNewRound() {
         oldRoundId + 1;
 
     // -------------------------------------------------
-    // SERVER GENERATES CARDS
+    // GENERATE COMPLETELY NEW CARDS
     // -------------------------------------------------
 
     const cards =
         generateNineCards();
 
     // -------------------------------------------------
-    // SERVER TIME
+    // CURRENT SERVER TIME
     // -------------------------------------------------
 
     const now =
         Date.now();
 
     // -------------------------------------------------
-    // REVEAL AFTER 20 SECONDS
+    // REVEAL TIME
+    // 20 SECONDS FROM NOW
     // -------------------------------------------------
 
     const revealAt =
-        now + 20000;
+        now + WAITING_TIME;
 
     // -------------------------------------------------
-    // SAVE ROUND
+    // ROUND DATA
     // -------------------------------------------------
 
-    await roundRef.set({
+    const roundData = {
 
         round_id:
             String(newRoundId),
@@ -299,14 +307,18 @@ async function createNewRound() {
 
         }
 
-    });
+    };
 
     // -------------------------------------------------
-    // SERVER LOG
+    // SAVE TO FIREBASE
     // -------------------------------------------------
+
+    await roundRef.set(
+        roundData
+    );
 
     console.log(
-        "================================="
+        "========================================"
     );
 
     console.log(
@@ -314,70 +326,198 @@ async function createNewRound() {
     );
 
     console.log(
-        "Status: waiting"
+        "STATUS: waiting"
     );
 
     console.log(
-        "Reveal after: 20 seconds"
+        "20 SECOND COUNTDOWN STARTED"
     );
 
     console.log(
-        "Reveal at:",
+        "REVEAL AT:",
         new Date(
             revealAt
         ).toISOString()
     );
 
     console.log(
-        "================================="
+        "CARDS:",
+        cards
+    );
+
+    console.log(
+        "========================================"
     );
 
     // -------------------------------------------------
-    // REVEAL AFTER 20 SECONDS
+    // START 20 SECOND TIMER
     // -------------------------------------------------
+
+    scheduleReveal(
+        String(newRoundId),
+        revealAt
+    );
+
+    return roundData;
+}
+
+// =====================================================
+// SCHEDULE REVEAL
+// =====================================================
+
+function scheduleReveal(
+    roundId,
+    revealAt
+) {
+
+    const delay =
+        Math.max(
+            0,
+            revealAt - Date.now()
+        );
+
+    console.log(
+        `Round ${roundId} will reveal in ${delay} ms`
+    );
 
     setTimeout(
         async () => {
 
             try {
 
-                const latestSnapshot =
+                // -------------------------------------
+                // READ LATEST ROUND
+                // -------------------------------------
+
+                const snapshot =
                     await roundRef.once(
                         "value"
                     );
 
                 const latest =
-                    latestSnapshot.val();
+                    snapshot.val();
 
-                // -----------------------------------------
-                // ONLY CURRENT ROUND CAN REVEAL
-                // -----------------------------------------
+                // -------------------------------------
+                // MAKE SURE THIS IS STILL
+                // THE CURRENT ROUND
+                // -------------------------------------
 
                 if (
-                    latest &&
+                    !latest ||
                     String(
                         latest.round_id
-                    ) ===
-                    String(
-                        newRoundId
-                    )
+                    ) !==
+                    String(roundId)
                 ) {
 
-                    await roundRef.update({
-
-                        status:
-                            "reveal",
-
-                        revealed_at:
-                            Date.now()
-
-                    });
-
                     console.log(
-                        `ROUND ${newRoundId} REVEALED`
+                        `Round ${roundId} timer ignored`
                     );
 
+                    return;
                 }
+
+                // -------------------------------------
+                // ONLY REVEAL IF STILL WAITING
+                // -------------------------------------
+
+                if (
+                    latest.status !==
+                    "waiting"
+                ) {
+
+                    console.log(
+                        `Round ${roundId} already changed`
+                    );
+
+                    return;
+                }
+
+                // -------------------------------------
+                // CHANGE TO REVEAL
+                // -------------------------------------
+
+                await roundRef.update({
+
+                    status:
+                        "reveal",
+
+                    revealed_at:
+                        Date.now()
+
+                });
+
+                console.log(
+                    `ROUND ${roundId} REVEALED`
+                );
+
+                console.log(
+                    "CARDS ARE VISIBLE FOR 5 SECONDS"
+                );
+
+                // -------------------------------------
+                // AFTER 5 SECONDS
+                // CREATE NEXT ROUND
+                // -------------------------------------
+
+                setTimeout(
+                    async () => {
+
+                        try {
+
+                            const latestSnapshot =
+                                await roundRef.once(
+                                    "value"
+                                );
+
+                            const latestRound =
+                                latestSnapshot.val();
+
+                            // -----------------------------
+                            // CHECK SAME ROUND
+                            // -----------------------------
+
+                            if (
+                                !latestRound ||
+                                String(
+                                    latestRound.round_id
+                                ) !==
+                                String(roundId)
+                            ) {
+
+                                console.log(
+                                    `Round ${roundId} is no longer current`
+                                );
+
+                                return;
+                            }
+
+                            // -----------------------------
+                            // CREATE NEXT ROUND
+                            // -----------------------------
+
+                            console.log(
+                                `ROUND ${roundId} 5 SECONDS FINISHED`
+                            );
+
+                            console.log(
+                                "CREATING NEXT ROUND..."
+                            );
+
+                            await createNewRound();
+
+                        } catch (error) {
+
+                            console.error(
+                                "Next round error:",
+                                error
+                            );
+
+                        }
+
+                    },
+                    REVEAL_TIME
+                );
 
             } catch (error) {
 
@@ -389,32 +529,258 @@ async function createNewRound() {
             }
 
         },
-        20000
+        delay
     );
+}
 
-    // -------------------------------------------------
-    // RETURN RESULT
-    // -------------------------------------------------
+// =====================================================
+// RESUME EXISTING ROUND AFTER SERVER RESTART
+// =====================================================
 
-    return {
+async function resumeExistingRound() {
 
-        round_id:
-            String(newRoundId),
+    try {
 
-        status:
-            "waiting",
+        const snapshot =
+            await roundRef.once(
+                "value"
+            );
 
-        started_at:
-            now,
+        const round =
+            snapshot.val();
 
-        reveal_at:
-            revealAt,
+        // -------------------------------------------------
+        // NO ROUND
+        // -------------------------------------------------
 
-        cards:
-            cards
+        if (!round) {
 
-    };
+            console.log(
+                "No existing round found."
+            );
 
+            console.log(
+                "Creating first round..."
+            );
+
+            await createNewRound();
+
+            return;
+        }
+
+        const roundId =
+            String(
+                round.round_id || "0"
+            );
+
+        const status =
+            String(
+                round.status || ""
+            );
+
+        const revealAt =
+            Number(
+                round.reveal_at || 0
+            );
+
+        console.log(
+            "========================================"
+        );
+
+        console.log(
+            "EXISTING ROUND FOUND"
+        );
+
+        console.log(
+            "ROUND:",
+            roundId
+        );
+
+        console.log(
+            "STATUS:",
+            status
+        );
+
+        console.log(
+            "========================================"
+        );
+
+        // -------------------------------------------------
+        // WAITING ROUND
+        // -------------------------------------------------
+
+        if (
+            status === "waiting" &&
+            revealAt > Date.now()
+        ) {
+
+            console.log(
+                "Resuming waiting countdown..."
+            );
+
+            scheduleReveal(
+                roundId,
+                revealAt
+            );
+
+            return;
+        }
+
+        // -------------------------------------------------
+        // WAITING BUT TIMER ALREADY FINISHED
+        // -------------------------------------------------
+
+        if (
+            status === "waiting" &&
+            revealAt <= Date.now()
+        ) {
+
+            await roundRef.update({
+
+                status:
+                    "reveal",
+
+                revealed_at:
+                    Date.now()
+
+            });
+
+            console.log(
+                `ROUND ${roundId} REVEALED AFTER RESUME`
+            );
+
+            setTimeout(
+                async () => {
+
+                    try {
+
+                        const latestSnapshot =
+                            await roundRef.once(
+                                "value"
+                            );
+
+                        const latest =
+                            latestSnapshot.val();
+
+                        if (
+                            latest &&
+                            String(
+                                latest.round_id
+                            ) === roundId
+                        ) {
+
+                            await createNewRound();
+
+                        }
+
+                    } catch (error) {
+
+                        console.error(
+                            "Resume next round error:",
+                            error
+                        );
+
+                    }
+
+                },
+                REVEAL_TIME
+            );
+
+            return;
+        }
+
+        // -------------------------------------------------
+        // ALREADY REVEAL
+        // -------------------------------------------------
+
+        if (
+            status === "reveal"
+        ) {
+
+            const revealedAt =
+                Number(
+                    round.revealed_at || 0
+                );
+
+            const nextRoundAt =
+                revealedAt +
+                REVEAL_TIME;
+
+            const delay =
+                Math.max(
+                    0,
+                    nextRoundAt -
+                    Date.now()
+                );
+
+            console.log(
+                `Reveal already active. Next round in ${delay} ms`
+            );
+
+            setTimeout(
+                async () => {
+
+                    try {
+
+                        const latestSnapshot =
+                            await roundRef.once(
+                                "value"
+                            );
+
+                        const latest =
+                            latestSnapshot.val();
+
+                        if (
+                            latest &&
+                            String(
+                                latest.round_id
+                            ) === roundId &&
+                            latest.status ===
+                            "reveal"
+                        ) {
+
+                            await createNewRound();
+
+                        }
+
+                    } catch (error) {
+
+                        console.error(
+                            "Resume reveal error:",
+                            error
+                        );
+
+                    }
+
+                },
+                delay
+            );
+
+            return;
+        }
+
+        // -------------------------------------------------
+        // UNKNOWN STATUS
+        // -------------------------------------------------
+
+        console.log(
+            "Unknown round status."
+        );
+
+        console.log(
+            "Creating a fresh round..."
+        );
+
+        await createNewRound();
+
+    } catch (error) {
+
+        console.error(
+            "Resume error:",
+            error
+        );
+
+    }
 }
 
 // =====================================================
@@ -436,7 +802,13 @@ app.get(
                 "running",
 
             room_id:
-                ROOM_ID
+                ROOM_ID,
+
+            waiting_seconds:
+                WAITING_TIME / 1000,
+
+            reveal_seconds:
+                REVEAL_TIME / 1000
 
         });
 
@@ -478,6 +850,9 @@ app.get(
 
                 ok: true,
 
+                room_id:
+                    ROOM_ID,
+
                 round:
                     data
 
@@ -505,7 +880,7 @@ app.get(
 );
 
 // =====================================================
-// START ROUND - POST
+// START ROUND - ADMIN POST
 // =====================================================
 
 app.post(
@@ -514,38 +889,17 @@ app.post(
 
         try {
 
-            // ---------------------------------------------
-            // ADMIN SECRET
-            // ---------------------------------------------
-
             const secret =
                 process.env.ADMIN_SECRET;
-
-            if (!secret) {
-
-                return res.status(500).json({
-
-                    ok: false,
-
-                    error:
-                        "ADMIN_SECRET is not configured"
-
-                });
-
-            }
-
-            // ---------------------------------------------
-            // READ HEADER
-            // ---------------------------------------------
 
             const suppliedSecret =
                 req.headers[
                     "x-admin-secret"
                 ];
 
-            // ---------------------------------------------
+            // -----------------------------------------
             // CHECK SECRET
-            // ---------------------------------------------
+            // -----------------------------------------
 
             if (
                 !suppliedSecret ||
@@ -563,28 +917,25 @@ app.post(
 
             }
 
-            // ---------------------------------------------
+            // -----------------------------------------
             // CREATE ROUND
-            // ---------------------------------------------
+            // -----------------------------------------
 
             const result =
                 await createNewRound();
-
-            // ---------------------------------------------
-            // RESPONSE
-            // ---------------------------------------------
 
             res.status(200).json({
 
                 ok: true,
 
                 message:
-                    "Round created",
+                    "New round created",
 
                 room_id:
                     ROOM_ID,
 
-                ...result
+                round:
+                    result
 
             });
 
@@ -610,7 +961,83 @@ app.post(
 );
 
 // =====================================================
-// 404 HANDLER
+// TEMPORARY BROWSER START
+// =====================================================
+//
+// TEST ONLY.
+//
+// Example:
+// /test-start-round?secret=YOUR_SECRET
+//
+// After testing remove this endpoint.
+// =====================================================
+
+app.get(
+    "/test-start-round",
+    async (req, res) => {
+
+        try {
+
+            const secret =
+                process.env.ADMIN_SECRET;
+
+            if (
+                req.query.secret !==
+                secret
+            ) {
+
+                return res.status(401).json({
+
+                    ok: false,
+
+                    error:
+                        "Unauthorized"
+
+                });
+
+            }
+
+            const result =
+                await createNewRound();
+
+            res.status(200).json({
+
+                ok: true,
+
+                message:
+                    "Test round created",
+
+                room_id:
+                    ROOM_ID,
+
+                round:
+                    result
+
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Test round error:",
+                error
+            );
+
+            res.status(500).json({
+
+                ok: false,
+
+                error:
+                    error.message
+
+            });
+
+        }
+
+    }
+);
+
+// =====================================================
+// 404
 // =====================================================
 
 app.use(
@@ -635,10 +1062,10 @@ app.use(
 app.listen(
     PORT,
     "0.0.0.0",
-    () => {
+    async () => {
 
         console.log(
-            "================================="
+            "========================================"
         );
 
         console.log(
@@ -658,12 +1085,22 @@ app.listen(
         );
 
         console.log(
-            "REVEAL TIME: 20 SECONDS"
+            "WAITING TIME: 20 SECONDS"
         );
 
         console.log(
-            "================================="
+            "REVEAL TIME: 5 SECONDS"
         );
+
+        console.log(
+            "========================================"
+        );
+
+        // ---------------------------------------------
+        // RESUME / START ROUND
+        // ---------------------------------------------
+
+        await resumeExistingRound();
 
     }
 );
