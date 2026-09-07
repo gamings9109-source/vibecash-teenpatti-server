@@ -28,7 +28,7 @@ if (!process.env.FIREBASE_DATABASE_URL) {
 }
 
 // =====================================================
-// READ FIREBASE SERVICE ACCOUNT
+// CHECK FIREBASE SERVICE ACCOUNT FILE
 // =====================================================
 
 if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
@@ -38,16 +38,22 @@ if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
     );
 }
 
+// =====================================================
+// READ SERVICE ACCOUNT
+// =====================================================
+
 let serviceAccount;
 
 try {
 
-    const jsonText = fs.readFileSync(
-        SERVICE_ACCOUNT_PATH,
-        "utf8"
-    );
+    const jsonText =
+        fs.readFileSync(
+            SERVICE_ACCOUNT_PATH,
+            "utf8"
+        );
 
-    serviceAccount = JSON.parse(jsonText);
+    serviceAccount =
+        JSON.parse(jsonText);
 
 } catch (error) {
 
@@ -63,21 +69,30 @@ try {
 // =====================================================
 
 admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL
+
+    credential:
+        admin.credential.cert(
+            serviceAccount
+        ),
+
+    databaseURL:
+        process.env.FIREBASE_DATABASE_URL
+
 });
 
 // =====================================================
 // FIREBASE DATABASE
 // =====================================================
 
-const db = admin.database();
+const db =
+    admin.database();
 
-const roundRef = db
-    .ref("rooms")
-    .child(ROOM_ID)
-    .child("teen_patti")
-    .child("round");
+const roundRef =
+    db
+        .ref("rooms")
+        .child(ROOM_ID)
+        .child("teen_patti")
+        .child("round");
 
 // =====================================================
 // 52 CARD DECK
@@ -141,16 +156,21 @@ function shuffle(deck) {
         i--
     ) {
 
-        const j = crypto.randomInt(
-            0,
-            i + 1
-        );
+        const j =
+            crypto.randomInt(
+                0,
+                i + 1
+            );
 
-        const temp = deck[i];
+        const temp =
+            deck[i];
 
-        deck[i] = deck[j];
+        deck[i] =
+            deck[j];
 
-        deck[j] = temp;
+        deck[j] =
+            temp;
+
     }
 
     return deck;
@@ -162,7 +182,8 @@ function shuffle(deck) {
 
 function generateNineCards() {
 
-    const deck = createDeck();
+    const deck =
+        createDeck();
 
     shuffle(deck);
 
@@ -194,16 +215,26 @@ async function createNewRound() {
     // -------------------------------------------------
 
     const snapshot =
-        await roundRef.once("value");
+        await roundRef.once(
+            "value"
+        );
 
     const current =
         snapshot.val() || {};
 
     let oldRoundId =
-        Number(current.round_id || 0);
+        Number(
+            current.round_id || 0
+        );
 
-    if (!Number.isFinite(oldRoundId)) {
+    if (
+        !Number.isFinite(
+            oldRoundId
+        )
+    ) {
+
         oldRoundId = 0;
+
     }
 
     // -------------------------------------------------
@@ -228,54 +259,11 @@ async function createNewRound() {
         Date.now();
 
     // -------------------------------------------------
-    // REVEAL AFTER 10 SECONDS
+    // REVEAL AFTER 20 SECONDS
     // -------------------------------------------------
-// =================================================
-// REVEAL AFTER 20 SECONDS
-// =================================================
 
-setTimeout(
-    async () => {
-
-        try {
-
-            const latestSnapshot =
-                await roundRef.once("value");
-
-            const latest =
-                latestSnapshot.val();
-
-            if (
-                latest &&
-                String(latest.round_id) ===
-                String(newRoundId)
-            ) {
-
-                await roundRef.update({
-
-                    status: "reveal",
-
-                    revealed_at: Date.now()
-
-                });
-
-                console.log(
-                    `Round ${newRoundId} REVEALED`
-                );
-            }
-
-        } catch (error) {
-
-            console.error(
-                "Reveal error:",
-                error
-            );
-        }
-
-    },
-    20000
-);
-    
+    const revealAt =
+        now + 20000;
 
     // -------------------------------------------------
     // SAVE ROUND
@@ -313,6 +301,10 @@ setTimeout(
 
     });
 
+    // -------------------------------------------------
+    // SERVER LOG
+    // -------------------------------------------------
+
     console.log(
         "================================="
     );
@@ -326,8 +318,14 @@ setTimeout(
     );
 
     console.log(
+        "Reveal after: 20 seconds"
+    );
+
+    console.log(
         "Reveal at:",
-        new Date(revealAt).toISOString()
+        new Date(
+            revealAt
+        ).toISOString()
     );
 
     console.log(
@@ -335,7 +333,7 @@ setTimeout(
     );
 
     // -------------------------------------------------
-    // REVEAL AFTER 10 SECONDS
+    // REVEAL AFTER 20 SECONDS
     // -------------------------------------------------
 
     setTimeout(
@@ -391,8 +389,12 @@ setTimeout(
             }
 
         },
-        10000
+        20000
     );
+
+    // -------------------------------------------------
+    // RETURN RESULT
+    // -------------------------------------------------
 
     return {
 
@@ -412,235 +414,79 @@ setTimeout(
             cards
 
     };
+
 }
 
 // =====================================================
 // HEALTH CHECK
 // =====================================================
 
-app.get("/", (req, res) => {
+app.get(
+    "/",
+    (req, res) => {
 
-    res.status(200).json({
+        res.status(200).json({
 
-        ok: true,
+            ok: true,
 
-        server:
-            "Teen Patti Server",
+            server:
+                "Teen Patti Server",
 
-        status:
-            "running",
+            status:
+                "running",
 
-        room_id:
-            ROOM_ID
+            room_id:
+                ROOM_ID
 
-    });
+        });
 
-});
+    }
+);
 
 // =====================================================
 // GET CURRENT ROUND
 // =====================================================
 
-app.get("/round", async (req, res) => {
-
-    try {
-
-        const snapshot =
-            await roundRef.once("value");
-
-        const data =
-            snapshot.val();
-
-        if (!data) {
-
-            return res.status(404).json({
-
-                ok: false,
-
-                error:
-                    "No round found"
-
-            });
-
-        }
-
-        res.status(200).json({
-
-            ok: true,
-
-            round:
-                data
-
-        });
-
-    } catch (error) {
-
-        console.error(
-            "Get round error:",
-            error
-        );
-
-        res.status(500).json({
-
-            ok: false,
-
-            error:
-                error.message
-
-        });
-
-    }
-
-});
-
-// =====================================================
-// START ROUND - POST
-// =====================================================
-
-app.post("/start-round", async (req, res) => {
-
-    try {
-
-        const secret =
-            process.env.ADMIN_SECRET;
-
-        if (!secret) {
-
-            return res.status(500).json({
-
-                ok: false,
-
-                error:
-                    "ADMIN_SECRET is not configured"
-
-            });
-
-        }
-
-        const suppliedSecret =
-            req.headers["x-admin-secret"];
-
-        if (
-            !suppliedSecret ||
-            suppliedSecret !== secret
-        ) {
-
-            return res.status(401).json({
-
-                ok: false,
-
-                error:
-                    "Unauthorized"
-
-            });
-
-        }
-
-        const result =
-            await createNewRound();
-
-        res.status(200).json({
-
-            ok: true,
-
-            room_id:
-                ROOM_ID,
-
-            ...result
-
-        });
-
-    } catch (error) {
-
-        console.error(
-            "Start round error:",
-            error
-        );
-
-        res.status(500).json({
-
-            ok: false,
-
-            error:
-                error.message
-
-        });
-
-    }
-
-});
-
-// =====================================================
-// TEMPORARY BROWSER TEST
-// =====================================================
-//
-// ONLY FOR TESTING.
-// After testing, we will remove this endpoint.
-//
-// Browser:
-// /test-start-round?secret=YOUR_ADMIN_SECRET
-//
-// =====================================================
-
 app.get(
-    "/test-start-round",
+    "/round",
     async (req, res) => {
 
         try {
 
-            const secret =
-                process.env.ADMIN_SECRET;
+            const snapshot =
+                await roundRef.once(
+                    "value"
+                );
 
-            if (!secret) {
+            const data =
+                snapshot.val();
 
-                return res.status(500).json({
+            if (!data) {
 
-                    ok: false,
-
-                    error:
-                        "ADMIN_SECRET is not configured"
-
-                });
-
-            }
-
-            if (
-                req.query.secret !== secret
-            ) {
-
-                return res.status(401).json({
+                return res.status(404).json({
 
                     ok: false,
 
                     error:
-                        "Unauthorized"
+                        "No round found"
 
                 });
 
             }
-
-            const result =
-                await createNewRound();
 
             res.status(200).json({
 
                 ok: true,
 
-                message:
-                    "Test round created",
-
-                room_id:
-                    ROOM_ID,
-
                 round:
-                    result
+                    data
 
             });
 
         } catch (error) {
 
             console.error(
-                "Test round error:",
+                "Get round error:",
                 error
             );
 
@@ -659,7 +505,112 @@ app.get(
 );
 
 // =====================================================
-// 404
+// START ROUND - POST
+// =====================================================
+
+app.post(
+    "/start-round",
+    async (req, res) => {
+
+        try {
+
+            // ---------------------------------------------
+            // ADMIN SECRET
+            // ---------------------------------------------
+
+            const secret =
+                process.env.ADMIN_SECRET;
+
+            if (!secret) {
+
+                return res.status(500).json({
+
+                    ok: false,
+
+                    error:
+                        "ADMIN_SECRET is not configured"
+
+                });
+
+            }
+
+            // ---------------------------------------------
+            // READ HEADER
+            // ---------------------------------------------
+
+            const suppliedSecret =
+                req.headers[
+                    "x-admin-secret"
+                ];
+
+            // ---------------------------------------------
+            // CHECK SECRET
+            // ---------------------------------------------
+
+            if (
+                !suppliedSecret ||
+                suppliedSecret !== secret
+            ) {
+
+                return res.status(401).json({
+
+                    ok: false,
+
+                    error:
+                        "Unauthorized"
+
+                });
+
+            }
+
+            // ---------------------------------------------
+            // CREATE ROUND
+            // ---------------------------------------------
+
+            const result =
+                await createNewRound();
+
+            // ---------------------------------------------
+            // RESPONSE
+            // ---------------------------------------------
+
+            res.status(200).json({
+
+                ok: true,
+
+                message:
+                    "Round created",
+
+                room_id:
+                    ROOM_ID,
+
+                ...result
+
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Start round error:",
+                error
+            );
+
+            res.status(500).json({
+
+                ok: false,
+
+                error:
+                    error.message
+
+            });
+
+        }
+
+    }
+);
+
+// =====================================================
+// 404 HANDLER
 // =====================================================
 
 app.use(
@@ -704,6 +655,10 @@ app.listen(
 
         console.log(
             "FIREBASE ADMIN: CONNECTED"
+        );
+
+        console.log(
+            "REVEAL TIME: 20 SECONDS"
         );
 
         console.log(
