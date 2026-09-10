@@ -1001,12 +1001,29 @@ async function processSelectionRequest(
             request.round_id || ""
         ).trim();
 
-    const seat =
-        String(
-            request.seat || ""
-        )
-            .trim()
-            .toUpperCase();
+
+
+let seat =
+    String(
+        request.seat || ""
+    )
+        .trim()
+        .toUpperCase();
+
+// Java agar seatA/seatB/seatC bheje
+// to server A/B/C mein convert karega.
+if (seat === "SEATA") {
+    seat = "A";
+}
+
+if (seat === "SEATB") {
+    seat = "B";
+}
+
+if (seat === "SEATC") {
+    seat = "C";
+}
+    
 
     const amount =
         Number(
