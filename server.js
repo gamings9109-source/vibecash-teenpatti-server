@@ -15,13 +15,10 @@ const PORT = process.env.PORT || 10000;
 
 const ROOM_ID = "567943";
 
-// Cards hidden for 20 seconds
 const WAITING_TIME = 20 * 1000;
 
-// Cards visible for 10 seconds
 const REVEAL_TIME = 10 * 1000;
 
-// Firebase check while server is awake
 const RECONCILE_INTERVAL = 1000;
 
 const SERVICE_ACCOUNT_PATH =
@@ -32,12 +29,14 @@ const SERVICE_ACCOUNT_PATH =
 // =====================================================
 
 if (!process.env.FIREBASE_DATABASE_URL) {
+
     throw new Error(
         "FIREBASE_DATABASE_URL environment variable is missing"
     );
 }
 
 if (!process.env.ADMIN_SECRET) {
+
     throw new Error(
         "ADMIN_SECRET environment variable is missing"
     );
@@ -48,6 +47,7 @@ if (!process.env.ADMIN_SECRET) {
 // =====================================================
 
 if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
+
     throw new Error(
         "Firebase service account file is missing: " +
         SERVICE_ACCOUNT_PATH
@@ -102,15 +102,22 @@ admin.initializeApp({
 const db =
     admin.database();
 
-const roundRef =
+const teenPattiRef =
     db
         .ref("rooms")
         .child(ROOM_ID)
-        .child("teen_patti")
+        .child("teen_patti");
+
+const roundRef =
+    teenPattiRef
         .child("round");
 
+const betRequestsRef =
+    teenPattiRef
+        .child("betRequests");
+
 // =====================================================
-// ROUND LOCK
+// LOCKS
 // =====================================================
 
 let roundOperationRunning = false;
@@ -118,30 +125,77 @@ let roundOperationRunning = false;
 let reconcileRunning = false;
 
 // =====================================================
+// ALLOWED SELECTIONS
+// =====================================================
+
+const ALLOWED_AMOUNTS = [
+
+    10,
+
+    100,
+
+    1000,
+
+    10000,
+
+    100000
+
+];
+
+const ALLOWED_SEATS = [
+
+    "A",
+
+    "B",
+
+    "C"
+
+];
+
+// =====================================================
 // 52 CARD DECK
 // =====================================================
 
 const suits = [
+
     "♠",
+
     "♥",
+
     "♦",
+
     "♣"
+
 ];
 
 const ranks = [
+
     "A",
+
     "2",
+
     "3",
+
     "4",
+
     "5",
+
     "6",
+
     "7",
+
     "8",
+
     "9",
+
     "10",
+
     "J",
+
     "Q",
+
     "K"
+
 ];
 
 // =====================================================
@@ -151,17 +205,29 @@ const ranks = [
 const rankValues = {
 
     "2": 2,
+
     "3": 3,
+
     "4": 4,
+
     "5": 5,
+
     "6": 6,
+
     "7": 7,
+
     "8": 8,
+
     "9": 9,
+
     "10": 10,
+
     "J": 11,
+
     "Q": 12,
+
     "K": 13,
+
     "A": 14
 
 };
@@ -183,6 +249,7 @@ function createDeck() {
             );
 
         }
+
     }
 
     return deck;
@@ -233,15 +300,21 @@ function generateNineCards() {
     return {
 
         A1: deck[0],
+
         A2: deck[1],
+
         A3: deck[2],
 
         B1: deck[3],
+
         B2: deck[4],
+
         B3: deck[5],
 
         C1: deck[6],
+
         C2: deck[7],
+
         C3: deck[8]
 
     };
@@ -290,19 +363,22 @@ function getCardValues(cards) {
 }
 
 // =====================================================
-// CHECK TRAIL
+// TRAIL
 // =====================================================
 
 function isTrail(values) {
 
     return (
+
         values[0] === values[1] &&
+
         values[1] === values[2]
+
     );
 }
 
 // =====================================================
-// CHECK COLOR
+// COLOR
 // =====================================================
 
 function isColor(cards) {
@@ -311,15 +387,18 @@ function isColor(cards) {
         cards.map(parseCard);
 
     return (
+
         parsed[0].suit ===
         parsed[1].suit &&
+
         parsed[1].suit ===
         parsed[2].suit
+
     );
 }
 
 // =====================================================
-// CHECK SEQUENCE
+// SEQUENCE
 // =====================================================
 
 function getSequenceHigh(values) {
@@ -330,21 +409,30 @@ function getSequenceHigh(values) {
         );
 
     // A-2-3
+
     if (
+
         sorted[0] === 2 &&
+
         sorted[1] === 3 &&
+
         sorted[2] === 14
+
     ) {
 
         return 3;
     }
 
     // Normal sequence
+
     if (
+
         sorted[1] ===
-            sorted[0] + 1 &&
+        sorted[0] + 1 &&
+
         sorted[2] ===
-            sorted[1] + 1
+        sorted[1] + 1
+
     ) {
 
         return sorted[2];
@@ -354,13 +442,15 @@ function getSequenceHigh(values) {
 }
 
 // =====================================================
-// CHECK PAIR
+// PAIR
 // =====================================================
 
 function getPairInfo(values) {
 
     if (
+
         values[0] === values[1]
+
     ) {
 
         return {
@@ -375,7 +465,9 @@ function getPairInfo(values) {
     }
 
     if (
+
         values[1] === values[2]
+
     ) {
 
         return {
@@ -413,9 +505,9 @@ function calculateHand(cards) {
     const pair =
         getPairInfo(values);
 
-    // =================================================
+    // -------------------------------------------------
     // TRAIL
-    // =================================================
+    // -------------------------------------------------
 
     if (trail) {
 
@@ -435,13 +527,15 @@ function calculateHand(cards) {
         };
     }
 
-    // =================================================
+    // -------------------------------------------------
     // PURE SEQUENCE
-    // =================================================
+    // -------------------------------------------------
 
     if (
+
         color &&
         sequenceHigh !== null
+
     ) {
 
         return {
@@ -460,12 +554,14 @@ function calculateHand(cards) {
         };
     }
 
-    // =================================================
+    // -------------------------------------------------
     // SEQUENCE
-    // =================================================
+    // -------------------------------------------------
 
     if (
+
         sequenceHigh !== null
+
     ) {
 
         return {
@@ -484,9 +580,9 @@ function calculateHand(cards) {
         };
     }
 
-    // =================================================
+    // -------------------------------------------------
     // COLOR
-    // =================================================
+    // -------------------------------------------------
 
     if (color) {
 
@@ -504,9 +600,9 @@ function calculateHand(cards) {
         };
     }
 
-    // =================================================
+    // -------------------------------------------------
     // PAIR
-    // =================================================
+    // -------------------------------------------------
 
     if (pair) {
 
@@ -521,15 +617,17 @@ function calculateHand(cards) {
             compare:
                 [
                     pair.pair,
+
                     pair.kicker
+
                 ]
 
         };
     }
 
-    // =================================================
+    // -------------------------------------------------
     // HIGH CARD
-    // =================================================
+    // -------------------------------------------------
 
     return {
 
@@ -552,13 +650,17 @@ function calculateHand(cards) {
 function compareHands(first, second) {
 
     if (
+
         first.category_rank !==
         second.category_rank
+
     ) {
 
         return (
+
             first.category_rank -
             second.category_rank
+
         );
     }
 
@@ -570,8 +672,11 @@ function compareHands(first, second) {
 
     const length =
         Math.max(
+
             firstCompare.length,
+
             secondCompare.length
+
         );
 
     for (
@@ -596,30 +701,42 @@ function compareHands(first, second) {
 }
 
 // =====================================================
-// CALCULATE RESULTS + WINNER
+// CALCULATE ROUND RESULTS
 // =====================================================
 
 function calculateRoundResults(cards) {
 
     const handA =
         calculateHand([
+
             cards.A1,
+
             cards.A2,
+
             cards.A3
+
         ]);
 
     const handB =
         calculateHand([
+
             cards.B1,
+
             cards.B2,
+
             cards.B3
+
         ]);
 
     const handC =
         calculateHand([
+
             cards.C1,
+
             cards.C2,
+
             cards.C3
+
         ]);
 
     let winner =
@@ -630,8 +747,11 @@ function calculateRoundResults(cards) {
 
     const compareB =
         compareHands(
+
             handB,
+
             bestHand
+
         );
 
     if (compareB > 0) {
@@ -645,8 +765,11 @@ function calculateRoundResults(cards) {
 
     const compareC =
         compareHands(
+
             handC,
+
             bestHand
+
         );
 
     if (compareC > 0) {
@@ -658,37 +781,43 @@ function calculateRoundResults(cards) {
             handC;
     }
 
-    // =================================================
-    // CHECK TIE
-    // =================================================
+    // -------------------------------------------------
+    // TIE
+    // -------------------------------------------------
 
     const tiedPlayers = [];
 
     if (
+
         compareHands(
             handA,
             bestHand
         ) === 0
+
     ) {
 
         tiedPlayers.push("A");
     }
 
     if (
+
         compareHands(
             handB,
             bestHand
         ) === 0
+
     ) {
 
         tiedPlayers.push("B");
     }
 
     if (
+
         compareHands(
             handC,
             bestHand
         ) === 0
+
     ) {
 
         tiedPlayers.push("C");
@@ -708,10 +837,7 @@ function calculateRoundResults(cards) {
                 handA.category,
 
             category_rank:
-                handA.category_rank,
-
-            compare:
-                handA.compare
+                handA.category_rank
 
         },
 
@@ -721,10 +847,7 @@ function calculateRoundResults(cards) {
                 handB.category,
 
             category_rank:
-                handB.category_rank,
-
-            compare:
-                handB.compare
+                handB.category_rank
 
         },
 
@@ -734,17 +857,701 @@ function calculateRoundResults(cards) {
                 handC.category,
 
             category_rank:
-                handC.category_rank,
-
-            compare:
-                handC.compare
+                handC.category_rank
 
         },
 
         winner:
             winner
+
     };
 }
+
+// =====================================================
+// REQUEST STATUS
+// =====================================================
+
+async function setRequestStatus(
+    requestId,
+    status,
+    extra
+) {
+
+    const updateData = {
+
+        status:
+            status,
+
+        processed_at:
+            Date.now()
+
+    };
+
+    if (extra) {
+
+        Object.assign(
+            updateData,
+            extra
+        );
+    }
+
+    await betRequestsRef
+        .child(requestId)
+        .update(updateData);
+}
+
+// =====================================================
+// PROCESS SELECTION REQUEST
+// =====================================================
+
+async function processSelectionRequest(
+    requestId,
+    request
+) {
+
+    if (!request) {
+        return;
+    }
+
+    // -------------------------------------------------
+    // DO NOT PROCESS FINISHED REQUEST
+    // -------------------------------------------------
+
+    if (
+
+        request.status === "accepted" ||
+
+        request.status === "rejected"
+
+    ) {
+
+        return;
+    }
+
+    const uid =
+        String(
+            request.uid || ""
+        ).trim();
+
+    const requestRoundId =
+        String(
+            request.round_id || ""
+        ).trim();
+
+    const seat =
+        String(
+            request.seat || ""
+        )
+            .trim()
+            .toUpperCase();
+
+    const amount =
+        Number(request.amount);
+
+    // -------------------------------------------------
+    // UID
+    // -------------------------------------------------
+
+    if (!uid) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Missing UID"
+            }
+
+        );
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // ROUND ID
+    // -------------------------------------------------
+
+    if (!requestRoundId) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Missing round_id"
+            }
+
+        );
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // SEAT
+    // -------------------------------------------------
+
+    if (
+
+        !ALLOWED_SEATS.includes(
+            seat
+        )
+
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Invalid seat"
+            }
+
+        );
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // AMOUNT
+    // -------------------------------------------------
+
+    if (
+
+        !ALLOWED_AMOUNTS.includes(
+            amount
+        )
+
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Invalid amount"
+            }
+
+        );
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // CURRENT ROUND
+    // -------------------------------------------------
+
+    const roundSnapshot =
+        await roundRef.once(
+            "value"
+        );
+
+    const round =
+        roundSnapshot.val();
+
+    if (!round) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "No active round"
+            }
+
+        );
+
+        return;
+    }
+
+    const currentRoundId =
+        String(
+            round.round_id || ""
+        );
+
+    // -------------------------------------------------
+    // ROUND MATCH
+    // -------------------------------------------------
+
+    if (
+
+        currentRoundId !==
+        requestRoundId
+
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Round expired"
+            }
+
+        );
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // SELECTION OPEN ONLY WAITING
+    // -------------------------------------------------
+
+    if (
+
+        round.status !==
+        "waiting"
+
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Selection closed"
+            }
+
+        );
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // REQUEST LOCK / IDEMPOTENCY
+    // -------------------------------------------------
+
+    const requestRef =
+        betRequestsRef
+            .child(requestId);
+
+    let claimed = false;
+
+    const claimResult =
+        await requestRef.transaction(
+            current => {
+
+                if (!current) {
+                    return;
+                }
+
+                if (
+
+                    current.status ===
+                    "accepted" ||
+
+                    current.status ===
+                    "rejected" ||
+
+                    current.status ===
+                    "processing"
+
+                ) {
+
+                    return;
+                }
+
+                current.status =
+                    "processing";
+
+                current.processing_at =
+                    Date.now();
+
+                claimed = true;
+
+                return current;
+            }
+        );
+
+    if (!claimResult.committed) {
+
+        return;
+    }
+
+    if (!claimed) {
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // USER
+    // -------------------------------------------------
+
+    const userRef =
+        db.ref(
+            `users/${uid}`
+        );
+
+    let userTransaction;
+
+    try {
+
+        userTransaction =
+            await userRef.transaction(
+                currentUser => {
+
+                    if (
+                        currentUser === null
+                    ) {
+
+                        return;
+                    }
+
+                    // ---------------------------------
+                    // REQUEST ALREADY PROCESSED?
+                    // ---------------------------------
+
+                    if (
+
+                        currentUser.processedSelectionRequests &&
+
+                        currentUser
+                            .processedSelectionRequests[
+                                requestId
+                            ]
+
+                    ) {
+
+                        return currentUser;
+                    }
+
+                    const diamonds =
+                        Number(
+                            currentUser.diamonds || 0
+                        );
+
+                    // ---------------------------------
+                    // BALANCE
+                    // ---------------------------------
+
+                    if (
+
+                        !Number.isFinite(
+                            diamonds
+                        )
+
+                    ) {
+
+                        return;
+                    }
+
+                    if (
+
+                        diamonds < amount
+
+                    ) {
+
+                        return;
+                    }
+
+                    // ---------------------------------
+                    // DEDUCT VIRTUAL DIAMONDS
+                    // ---------------------------------
+
+                    currentUser.diamonds =
+                        diamonds - amount;
+
+                    // ---------------------------------
+                    // DEMAND
+                    // ---------------------------------
+
+                    if (
+
+                        !currentUser.demand ||
+
+                        typeof currentUser.demand !==
+                        "object"
+
+                    ) {
+
+                        currentUser.demand = {};
+                    }
+
+                    const demandKey =
+                        `seat${seat}`;
+
+                    const oldDemand =
+                        Number(
+
+                            currentUser
+                                .demand[
+                                    demandKey
+                                ] || 0
+
+                        );
+
+                    currentUser.demand[
+                        demandKey
+                    ] =
+                        oldDemand + amount;
+
+                    // ---------------------------------
+                    // REQUEST MARKER
+                    // ---------------------------------
+
+                    if (
+
+                        !currentUser
+                            .processedSelectionRequests
+
+                    ) {
+
+                        currentUser
+                            .processedSelectionRequests = {};
+                    }
+
+                    currentUser
+                        .processedSelectionRequests[
+                            requestId
+                        ] = true;
+
+                    return currentUser;
+                }
+            );
+
+    } catch (error) {
+
+        console.error(
+            "USER TRANSACTION ERROR:",
+            error
+        );
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Transaction error"
+            }
+
+        );
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // TRANSACTION FAILED
+    // -------------------------------------------------
+
+    if (
+        !userTransaction.committed
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Insufficient diamonds"
+            }
+
+        );
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // UPDATE ROUND POT
+    // -------------------------------------------------
+
+    const potRef =
+        roundRef
+            .child("pot")
+            .child(seat);
+
+    try {
+
+        const potTransaction =
+            await potRef.transaction(
+                currentPot => {
+
+                    const oldPot =
+                        Number(
+                            currentPot || 0
+                        );
+
+                    return oldPot + amount;
+                }
+            );
+
+        if (
+            !potTransaction.committed
+        ) {
+
+            console.error(
+                "POT TRANSACTION NOT COMMITTED"
+            );
+
+            await setRequestStatus(
+
+                requestId,
+
+                "accepted_pot_update_error",
+
+                {
+                    reason:
+                        "Selection accepted but pot update failed"
+                }
+
+            );
+
+            return;
+        }
+
+    } catch (error) {
+
+        console.error(
+            "POT UPDATE ERROR:",
+            error
+        );
+
+        await setRequestStatus(
+
+            requestId,
+
+            "accepted_pot_update_error",
+
+            {
+                reason:
+                    "Selection accepted but pot update failed"
+            }
+
+        );
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // ACCEPT
+    // -------------------------------------------------
+
+    await setRequestStatus(
+
+        requestId,
+
+        "accepted",
+
+        {
+
+            processed_uid:
+                uid,
+
+            processed_seat:
+                seat,
+
+            processed_amount:
+                amount
+
+        }
+
+    );
+
+    console.log(
+        "========================================"
+    );
+
+    console.log(
+        "SELECTION ACCEPTED"
+    );
+
+    console.log(
+        "REQUEST:",
+        requestId
+    );
+
+    console.log(
+        "UID:",
+        uid
+    );
+
+    console.log(
+        "ROUND:",
+        requestRoundId
+    );
+
+    console.log(
+        "SEAT:",
+        seat
+    );
+
+    console.log(
+        "AMOUNT:",
+        amount
+    );
+
+    console.log(
+        "========================================"
+    );
+}
+
+// =====================================================
+// BET REQUEST LISTENER
+// =====================================================
+
+betRequestsRef.on(
+    "child_added",
+    async snapshot => {
+
+        const requestId =
+            snapshot.key;
+
+        const request =
+            snapshot.val();
+
+        try {
+
+            console.log(
+                "NEW SELECTION REQUEST:",
+                requestId
+            );
+
+            await processSelectionRequest(
+
+                requestId,
+
+                request
+
+            );
+
+        } catch (error) {
+
+            console.error(
+                "SELECTION PROCESSOR ERROR:",
+                error
+            );
+        }
+    }
+);
+
+console.log(
+    "SELECTION REQUEST PROCESSOR ENABLED"
+);
 
 // =====================================================
 // CREATE NEW ROUND
@@ -779,7 +1586,9 @@ async function createNewRound(reason) {
             );
 
         if (
-            !Number.isFinite(oldRoundId)
+            !Number.isFinite(
+                oldRoundId
+            )
         ) {
 
             oldRoundId = 0;
@@ -788,8 +1597,16 @@ async function createNewRound(reason) {
         const newRoundId =
             oldRoundId + 1;
 
+        // -------------------------------------------------
+        // GENERATE SERVER CARDS
+        // -------------------------------------------------
+
         const cards =
             generateNineCards();
+
+        // -------------------------------------------------
+        // SERVER RESULT
+        // -------------------------------------------------
 
         const results =
             calculateRoundResults(
@@ -801,6 +1618,10 @@ async function createNewRound(reason) {
 
         const revealAt =
             now + WAITING_TIME;
+
+        // -------------------------------------------------
+        // ROUND DATA
+        // -------------------------------------------------
 
         const roundData = {
 
@@ -816,62 +1637,59 @@ async function createNewRound(reason) {
             reveal_at:
                 revealAt,
 
-            cards: {
+            pot: {
 
-                A1: cards.A1,
-                A2: cards.A2,
-                A3: cards.A3,
+                A: 0,
 
-                B1: cards.B1,
-                B2: cards.B2,
-                B3: cards.B3,
+                B: 0,
 
-                C1: cards.C1,
-                C2: cards.C2,
-                C3: cards.C3
+                C: 0
 
             },
 
-            results: {
+            // Cards are published at reveal.
+            cards: null,
 
-                A: {
+            results: null,
 
-                    category:
-                        results.A.category,
+            winner: null
 
-                    category_rank:
-                        results.A.category_rank
-
-                },
-
-                B: {
-
-                    category:
-                        results.B.category,
-
-                    category_rank:
-                        results.B.category_rank
-
-                },
-
-                C: {
-
-                    category:
-                        results.C.category,
-
-                    category_rank:
-                        results.C.category_rank
-
-                }
-
-            },
-
-            winner:
-                results.winner
         };
+
+        // -------------------------------------------------
+        // PRIVATE SERVER DATA
+        // -------------------------------------------------
+
+        const secretRoundRef =
+            teenPattiRef
+                .child("server_round");
+
+        const secretData = {
+
+            round_id:
+                String(newRoundId),
+
+            cards:
+                cards,
+
+            results:
+                results,
+
+            created_at:
+                now
+
+        };
+
+        // -------------------------------------------------
+        // WRITE PUBLIC + SERVER ROUND
+        // -------------------------------------------------
 
         await roundRef.set(
             roundData
+        );
+
+        await secretRoundRef.set(
+            secretData
         );
 
         console.log(
@@ -896,13 +1714,10 @@ async function createNewRound(reason) {
         );
 
         console.log(
-            "STARTED AT:",
-            new Date(now).toISOString()
-        );
-
-        console.log(
             "REVEAL AT:",
-            new Date(revealAt).toISOString()
+            new Date(
+                revealAt
+            ).toISOString()
         );
 
         console.log(
@@ -926,17 +1741,15 @@ async function createNewRound(reason) {
         );
 
         console.log(
-            "CARDS:",
-            cards
-        );
-
-        console.log(
             "========================================"
         );
 
         scheduleReveal(
+
             String(newRoundId),
+
             revealAt
+
         );
 
         return roundData;
@@ -973,9 +1786,12 @@ async function revealRound(roundId) {
             snapshot.val();
 
         if (
+
             !latest ||
+
             String(latest.round_id) !==
             String(roundId)
+
         ) {
 
             console.log(
@@ -986,8 +1802,10 @@ async function revealRound(roundId) {
         }
 
         if (
+
             latest.status !==
             "waiting"
+
         ) {
 
             console.log(
@@ -997,8 +1815,40 @@ async function revealRound(roundId) {
             return false;
         }
 
+        // -------------------------------------------------
+        // READ PRIVATE SERVER ROUND
+        // -------------------------------------------------
+
+        const secretSnapshot =
+            await teenPattiRef
+                .child("server_round")
+                .once("value");
+
+        const secret =
+            secretSnapshot.val();
+
+        if (
+
+            !secret ||
+
+            String(secret.round_id) !==
+            String(roundId)
+
+        ) {
+
+            console.error(
+                `REVEAL ${roundId}: private server round missing`
+            );
+
+            return false;
+        }
+
         const revealedAt =
             Date.now();
+
+        // -------------------------------------------------
+        // PUBLISH CARDS + RESULTS + WINNER
+        // -------------------------------------------------
 
         await roundRef.update({
 
@@ -1006,7 +1856,16 @@ async function revealRound(roundId) {
                 "reveal",
 
             revealed_at:
-                revealedAt
+                revealedAt,
+
+            cards:
+                secret.cards,
+
+            results:
+                secret.results,
+
+            winner:
+                secret.results.winner
 
         });
 
@@ -1015,12 +1874,19 @@ async function revealRound(roundId) {
         );
 
         console.log(
+            "CARDS + RESULTS + WINNER PUBLISHED"
+        );
+
+        console.log(
             "CARDS VISIBLE FOR 10 SECONDS"
         );
 
         scheduleNextRoundAfterReveal(
+
             roundId,
+
             revealedAt
+
         );
 
         return true;
@@ -1047,9 +1913,12 @@ function scheduleReveal(
 
     const delay =
         Math.max(
+
             0,
+
             Number(revealAt) -
             Date.now()
+
         );
 
     console.log(
@@ -1057,6 +1926,7 @@ function scheduleReveal(
     );
 
     setTimeout(
+
         async () => {
 
             try {
@@ -1074,7 +1944,9 @@ function scheduleReveal(
             }
 
         },
+
         delay
+
     );
 }
 
@@ -1093,9 +1965,12 @@ function scheduleNextRoundAfterReveal(
 
     const delay =
         Math.max(
+
             0,
+
             nextRoundAt -
             Date.now()
+
         );
 
     console.log(
@@ -1103,6 +1978,7 @@ function scheduleNextRoundAfterReveal(
     );
 
     setTimeout(
+
         async () => {
 
             try {
@@ -1116,9 +1992,12 @@ function scheduleNextRoundAfterReveal(
                     snapshot.val();
 
                 if (
+
                     !latest ||
+
                     String(latest.round_id) !==
                     String(roundId)
+
                 ) {
 
                     console.log(
@@ -1129,8 +2008,10 @@ function scheduleNextRoundAfterReveal(
                 }
 
                 if (
+
                     latest.status !==
                     "reveal"
+
                 ) {
 
                     console.log(
@@ -1139,14 +2020,6 @@ function scheduleNextRoundAfterReveal(
 
                     return;
                 }
-
-                console.log(
-                    `ROUND ${roundId} 10 SECONDS FINISHED`
-                );
-
-                console.log(
-                    "CREATING NEXT ROUND..."
-                );
 
                 await createNewRound(
                     "normal cycle"
@@ -1161,21 +2034,20 @@ function scheduleNextRoundAfterReveal(
             }
 
         },
+
         delay
+
     );
 }
 
 // =====================================================
 // RECONCILER
 // =====================================================
-//
-// Runs every 1 second while server is awake.
-// Firebase timestamps are used as source of truth.
-//
 
 async function reconcileRound() {
 
     if (reconcileRunning) {
+
         return;
     }
 
@@ -1191,15 +2063,11 @@ async function reconcileRound() {
         const round =
             snapshot.val();
 
-        // =================================================
+        // -------------------------------------------------
         // NO ROUND
-        // =================================================
+        // -------------------------------------------------
 
         if (!round) {
-
-            console.log(
-                "RECONCILE: NO ROUND"
-            );
 
             await createNewRound(
                 "reconcile no round"
@@ -1226,19 +2094,20 @@ async function reconcileRound() {
         const now =
             Date.now();
 
-        // =================================================
+        // -------------------------------------------------
         // WAITING
-        // =================================================
+        // -------------------------------------------------
 
         if (
-            status === "waiting"
+
+            status ===
+            "waiting"
+
         ) {
 
-            if (revealAt <= 0) {
-
-                console.log(
-                    `RECONCILE: Round ${roundId} invalid reveal_at`
-                );
+            if (
+                revealAt <= 0
+            ) {
 
                 await createNewRound(
                     "invalid waiting round"
@@ -1247,14 +2116,12 @@ async function reconcileRound() {
                 return;
             }
 
-            if (now < revealAt) {
+            if (
+                now < revealAt
+            ) {
 
                 return;
             }
-
-            console.log(
-                `RECONCILE: Round ${roundId} waiting finished`
-            );
 
             await revealRound(
                 roundId
@@ -1263,12 +2130,15 @@ async function reconcileRound() {
             return;
         }
 
-        // =================================================
+        // -------------------------------------------------
         // REVEAL
-        // =================================================
+        // -------------------------------------------------
 
         if (
-            status === "reveal"
+
+            status ===
+            "reveal"
+
         ) {
 
             let revealedAt =
@@ -1276,7 +2146,9 @@ async function reconcileRound() {
                     round.revealed_at || 0
                 );
 
-            if (revealedAt <= 0) {
+            if (
+                revealedAt <= 0
+            ) {
 
                 revealedAt =
                     now;
@@ -1288,10 +2160,6 @@ async function reconcileRound() {
 
                 });
 
-                console.log(
-                    `RECONCILE: Round ${roundId} missing revealed_at fixed`
-                );
-
                 return;
             }
 
@@ -1299,18 +2167,12 @@ async function reconcileRound() {
                 revealedAt +
                 REVEAL_TIME;
 
-            if (now < nextRoundAt) {
+            if (
+                now < nextRoundAt
+            ) {
 
                 return;
             }
-
-            console.log(
-                `RECONCILE: Round ${roundId} 10-second reveal finished`
-            );
-
-            console.log(
-                "RECONCILE: CREATING NEXT ROUND"
-            );
 
             await createNewRound(
                 "reconcile reveal finished"
@@ -1319,9 +2181,9 @@ async function reconcileRound() {
             return;
         }
 
-        // =================================================
-        // UNKNOWN STATUS
-        // =================================================
+        // -------------------------------------------------
+        // UNKNOWN
+        // -------------------------------------------------
 
         console.log(
             `RECONCILE: UNKNOWN STATUS "${status}"`
@@ -1360,15 +2222,11 @@ async function resumeExistingRound() {
         const round =
             snapshot.val();
 
-        // =================================================
+        // -------------------------------------------------
         // NO ROUND
-        // =================================================
+        // -------------------------------------------------
 
         if (!round) {
-
-            console.log(
-                "STARTUP: NO EXISTING ROUND"
-            );
 
             await createNewRound(
                 "startup no round"
@@ -1427,64 +2285,56 @@ async function resumeExistingRound() {
             "========================================"
         );
 
-        // =================================================
-        // WAITING STILL ACTIVE
-        // =================================================
+        // -------------------------------------------------
+        // WAITING
+        // -------------------------------------------------
 
         if (
+
             status === "waiting" &&
+
             revealAt > now
+
         ) {
-
-            const remaining =
-                revealAt - now;
-
-            console.log(
-                `STARTUP: Round ${roundId} still waiting`
-            );
-
-            console.log(
-                `STARTUP: ${remaining} ms remaining`
-            );
 
             scheduleReveal(
+
                 roundId,
+
                 revealAt
+
             );
 
             return;
         }
 
-        // =================================================
+        // -------------------------------------------------
         // WAITING EXPIRED
-        // =================================================
+        // -------------------------------------------------
 
         if (
+
             status === "waiting" &&
+
             revealAt <= now
+
         ) {
 
-            console.log(
-                `STARTUP: Round ${roundId} waiting expired`
-            );
-
-            console.log(
-                "STARTUP: Creating fresh 20-second round"
-            );
-
-            await createNewRound(
-                "startup expired waiting"
+            await revealRound(
+                roundId
             );
 
             return;
         }
 
-        // =================================================
+        // -------------------------------------------------
         // REVEAL
-        // =================================================
+        // -------------------------------------------------
 
         if (
+
             status === "reveal"
+
         ) {
 
             let revealedAt =
@@ -1492,7 +2342,9 @@ async function resumeExistingRound() {
                     round.revealed_at || 0
                 );
 
-            if (revealedAt <= 0) {
+            if (
+                revealedAt <= 0
+            ) {
 
                 revealedAt =
                     now;
@@ -1504,47 +2356,26 @@ async function resumeExistingRound() {
 
                 });
 
-                console.log(
-                    `STARTUP: Round ${roundId} missing revealed_at fixed`
-                );
             }
 
             const revealEnd =
                 revealedAt +
                 REVEAL_TIME;
 
-            // Reveal still active
             if (
                 revealEnd > now
             ) {
 
-                const remaining =
-                    revealEnd - now;
-
-                console.log(
-                    `STARTUP: Round ${roundId} reveal active`
-                );
-
-                console.log(
-                    `STARTUP: ${remaining} ms remaining`
-                );
-
                 scheduleNextRoundAfterReveal(
+
                     roundId,
+
                     revealedAt
+
                 );
 
                 return;
             }
-
-            // Reveal finished
-            console.log(
-                `STARTUP: Round ${roundId} reveal already finished`
-            );
-
-            console.log(
-                "STARTUP: Creating fresh round"
-            );
 
             await createNewRound(
                 "startup expired reveal"
@@ -1553,13 +2384,9 @@ async function resumeExistingRound() {
             return;
         }
 
-        // =================================================
-        // UNKNOWN STATUS
-        // =================================================
-
-        console.log(
-            `STARTUP: Unknown status "${status}"`
-        );
+        // -------------------------------------------------
+        // UNKNOWN
+        // -------------------------------------------------
 
         await createNewRound(
             "startup unknown status"
@@ -1575,7 +2402,7 @@ async function resumeExistingRound() {
 }
 
 // =====================================================
-// HEALTH CHECK
+// HEALTH
 // =====================================================
 
 app.get(
@@ -1602,6 +2429,9 @@ app.get(
                 REVEAL_TIME / 1000,
 
             reconciler:
+                "enabled",
+
+            selection_processor:
                 "enabled",
 
             startup_recovery:
@@ -1741,7 +2571,7 @@ app.get(
 );
 
 // =====================================================
-// START ROUND - ADMIN
+// ADMIN START ROUND
 // =====================================================
 
 app.post(
@@ -1759,8 +2589,11 @@ app.post(
                 ];
 
             if (
+
                 !suppliedSecret ||
+
                 suppliedSecret !== secret
+
             ) {
 
                 return res.status(401).json({
@@ -1843,7 +2676,7 @@ app.use(
 );
 
 // =====================================================
-// GLOBAL ERROR HANDLER
+// GLOBAL ERROR
 // =====================================================
 
 app.use(
@@ -1854,7 +2687,10 @@ app.use(
             error
         );
 
-        if (res.headersSent) {
+        if (
+            res.headersSent
+        ) {
+
             return next(error);
         }
 
@@ -1875,8 +2711,11 @@ app.use(
 
 const server =
     app.listen(
+
         PORT,
+
         "0.0.0.0",
+
         async () => {
 
             console.log(
@@ -1908,7 +2747,11 @@ const server =
             );
 
             console.log(
-                "WINNER CALCULATION: ENABLED"
+                "SERVER WINNER CALCULATION: ENABLED"
+            );
+
+            console.log(
+                "SELECTION PROCESSOR: ENABLED"
             );
 
             console.log(
@@ -1917,10 +2760,6 @@ const server =
 
             console.log(
                 "STARTUP RECOVERY: ENABLED"
-            );
-
-            console.log(
-                "SLEEP RECOVERY: ENABLED"
             );
 
             console.log(
@@ -1939,11 +2778,8 @@ const server =
                 );
             }
 
-            // =================================================
-            // RECONCILER
-            // =================================================
-
             setInterval(
+
                 () => {
 
                     reconcileRound()
@@ -1957,7 +2793,9 @@ const server =
                         });
 
                 },
+
                 RECONCILE_INTERVAL
+
             );
 
             console.log(
