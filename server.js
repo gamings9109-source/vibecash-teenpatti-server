@@ -17,11 +17,11 @@ const PORT =
 const ROOM_ID =
     "567943";
 
-// 20 seconds selection time
+// Selection window
 const WAITING_TIME =
     20 * 1000;
 
-// 10 seconds cards visible
+// Result visible window
 const REVEAL_TIME =
     10 * 1000;
 
@@ -29,7 +29,7 @@ const REVEAL_TIME =
 const RECONCILE_INTERVAL =
     1000;
 
-// Firebase Admin SDK service account
+// Firebase service account
 const SERVICE_ACCOUNT_PATH =
     "/etc/secrets/firebase-service-account.json";
 
@@ -55,7 +55,9 @@ if (!process.env.ADMIN_SECRET) {
 // SERVICE ACCOUNT CHECK
 // =====================================================
 
-if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
+if (!fs.existsSync(
+    SERVICE_ACCOUNT_PATH
+)) {
 
     throw new Error(
         "Firebase service account file is missing: " +
@@ -64,7 +66,7 @@ if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
 }
 
 // =====================================================
-// SERVICE ACCOUNT
+// LOAD SERVICE ACCOUNT
 // =====================================================
 
 let serviceAccount;
@@ -78,7 +80,9 @@ try {
         );
 
     serviceAccount =
-        JSON.parse(jsonText);
+        JSON.parse(
+            jsonText
+        );
 
 } catch (error) {
 
@@ -488,9 +492,7 @@ function calculateHand(cards) {
     const pair =
         getPairInfo(values);
 
-    // -------------------------------------------------
     // TRAIL
-    // -------------------------------------------------
 
     if (trail) {
 
@@ -510,9 +512,7 @@ function calculateHand(cards) {
         };
     }
 
-    // -------------------------------------------------
     // PURE SEQUENCE
-    // -------------------------------------------------
 
     if (
 
@@ -537,9 +537,7 @@ function calculateHand(cards) {
         };
     }
 
-    // -------------------------------------------------
     // SEQUENCE
-    // -------------------------------------------------
 
     if (
         sequenceHigh !== null
@@ -561,9 +559,7 @@ function calculateHand(cards) {
         };
     }
 
-    // -------------------------------------------------
     // COLOR
-    // -------------------------------------------------
 
     if (color) {
 
@@ -581,9 +577,7 @@ function calculateHand(cards) {
         };
     }
 
-    // -------------------------------------------------
     // PAIR
-    // -------------------------------------------------
 
     if (pair) {
 
@@ -604,9 +598,7 @@ function calculateHand(cards) {
         };
     }
 
-    // -------------------------------------------------
     // HIGH CARD
-    // -------------------------------------------------
 
     return {
 
@@ -711,15 +703,13 @@ function calculateRoundResults(cards) {
 
         ]);
 
-    let winner =
-        "A";
-
     let bestHand =
         handA;
 
-    // -------------------------------------------------
-    // CHECK B
-    // -------------------------------------------------
+    let winner =
+        "A";
+
+    // B
 
     const compareB =
         compareHands(
@@ -729,16 +719,14 @@ function calculateRoundResults(cards) {
 
     if (compareB > 0) {
 
-        winner =
-            "B";
-
         bestHand =
             handB;
+
+        winner =
+            "B";
     }
 
-    // -------------------------------------------------
-    // CHECK C
-    // -------------------------------------------------
+    // C
 
     const compareC =
         compareHands(
@@ -748,50 +736,44 @@ function calculateRoundResults(cards) {
 
     if (compareC > 0) {
 
-        winner =
-            "C";
-
         bestHand =
             handC;
+
+        winner =
+            "C";
     }
 
-    // -------------------------------------------------
+    // =================================================
     // TIE
-    // -------------------------------------------------
+    // =================================================
 
     const tiedPlayers = [];
 
     if (
-
         compareHands(
             handA,
             bestHand
         ) === 0
-
     ) {
 
         tiedPlayers.push("A");
     }
 
     if (
-
         compareHands(
             handB,
             bestHand
         ) === 0
-
     ) {
 
         tiedPlayers.push("B");
     }
 
     if (
-
         compareHands(
             handC,
             bestHand
         ) === 0
-
     ) {
 
         tiedPlayers.push("C");
@@ -867,26 +849,109 @@ async function setRequestStatus(
 
     await betRequestsRef
         .child(requestId)
-        .update(updateData);
+        .update(
+            updateData
+        );
 }
 
 // =====================================================
-// RESET USERS FROM PREVIOUS ROUND
+// VERIFY FIREBASE UID
 // =====================================================
-//
-// Sirf un users ko reset karta hai jinhone previous
-// round mein selection ki thi.
-//
-// Isse Java ka:
-//
-// You:400170
-//
-// next round mein:
-//
-// You:0
-//
-// ho jayega.
-//
+
+async function verifyRequestUser(
+    request
+) {
+
+    const idToken =
+        String(
+            request.idToken || ""
+        ).trim();
+
+    if (!idToken) {
+
+        throw new Error(
+            "Missing Firebase ID token"
+        );
+    }
+
+    const decodedToken =
+        await admin
+            .auth()
+            .verifyIdToken(
+                idToken
+            );
+
+    if (
+        !decodedToken ||
+        !decodedToken.uid
+    ) {
+
+        throw new Error(
+            "Invalid Firebase ID token"
+        );
+    }
+
+    const requestUid =
+        String(
+            request.uid || ""
+        ).trim();
+
+    if (!requestUid) {
+
+        throw new Error(
+            "Missing UID"
+        );
+    }
+
+    if (
+        requestUid !==
+        decodedToken.uid
+    ) {
+
+        throw new Error(
+            "UID verification failed"
+        );
+    }
+
+    return decodedToken.uid;
+}
+
+// =====================================================
+// NORMALIZE SEAT
+// =====================================================
+
+function normalizeSeat(
+    value
+) {
+
+    let seat =
+        String(
+            value || ""
+        )
+            .trim()
+            .toUpperCase();
+
+    if (seat === "SEATA") {
+
+        seat = "A";
+    }
+
+    if (seat === "SEATB") {
+
+        seat = "B";
+    }
+
+    if (seat === "SEATC") {
+
+        seat = "C";
+    }
+
+    return seat;
+}
+
+// =====================================================
+// RESET PREVIOUS ROUND USERS
+// =====================================================
 
 async function resetPreviousRoundUsers(
     previousRoundId
@@ -904,8 +969,12 @@ async function resetPreviousRoundUsers(
 
         const snapshot =
             await roundUsersRef
-                .child(previousRoundId)
-                .once("value");
+                .child(
+                    previousRoundId
+                )
+                .once(
+                    "value"
+                );
 
         if (!snapshot.exists()) {
 
@@ -920,7 +989,9 @@ async function resetPreviousRoundUsers(
                 const uid =
                     child.key;
 
-                if (!uid) return;
+                if (!uid) {
+                    return;
+                }
 
                 updates[
                     `users/${uid}/demand/seatA`
@@ -938,32 +1009,137 @@ async function resetPreviousRoundUsers(
         );
 
         if (
-            Object.keys(updates).length === 0
+            Object.keys(
+                updates
+            ).length === 0
         ) {
 
             return;
         }
 
-        await db.ref().update(
-            updates
-        );
+        await db
+            .ref()
+            .update(
+                updates
+            );
 
         console.log(
-            "PREVIOUS ROUND USER DEMAND RESET:",
+            "PREVIOUS ROUND DEMAND RESET:",
             previousRoundId
         );
 
     } catch (error) {
 
         console.error(
-            "RESET PREVIOUS DEMAND ERROR:",
+            "RESET PREVIOUS ROUND ERROR:",
             error
         );
     }
 }
 
 // =====================================================
-// PROCESS SELECTION
+// ROLLBACK USER TRANSACTION
+// =====================================================
+//
+// Agar user balance deduct ho gaya lekin pot update
+// fail ho gaya, to balance refund kiya jayega.
+//
+// =====================================================
+
+async function rollbackUserSelection(
+    uid,
+    requestId,
+    seat,
+    amount
+) {
+
+    const userRef =
+        db.ref(
+            `users/${uid}`
+        );
+
+    try {
+
+        const result =
+            await userRef.transaction(
+
+                currentUser => {
+
+                    if (
+                        currentUser === null
+                    ) {
+
+                        return;
+                    }
+
+                    const marker =
+                        currentUser
+                            .processedSelectionRequests;
+
+                    if (
+                        !marker ||
+                        !marker[requestId]
+                    ) {
+
+                        return currentUser;
+                    }
+
+                    const diamonds =
+                        Number(
+                            currentUser.diamonds || 0
+                        );
+
+                    currentUser.diamonds =
+                        diamonds + amount;
+
+                    const demandKey =
+                        `seat${seat}`;
+
+                    if (
+                        currentUser.demand
+                    ) {
+
+                        const oldDemand =
+                            Number(
+                                currentUser
+                                    .demand[
+                                        demandKey
+                                    ] || 0
+                            );
+
+                        currentUser.demand[
+                            demandKey
+                        ] =
+                            Math.max(
+                                0,
+                                oldDemand - amount
+                            );
+                    }
+
+                    delete currentUser
+                        .processedSelectionRequests[
+                            requestId
+                        ];
+
+                    return currentUser;
+                }
+            );
+
+        return result.committed;
+
+    } catch (error) {
+
+        console.error(
+            "ROLLBACK ERROR:",
+            error
+        );
+
+        return false;
+    }
+}
+
+// =====================================================
+// PROCESS SELECTION REQUEST
 // =====================================================
 
 async function processSelectionRequest(
@@ -976,248 +1152,35 @@ async function processSelectionRequest(
         return;
     }
 
-    // -------------------------------------------------
+    // =================================================
     // ALREADY PROCESSED
-    // -------------------------------------------------
+    // =================================================
 
     if (
 
-        request.status === "accepted" ||
+        request.status ===
+        "accepted" ||
 
-        request.status === "rejected"
+        request.status ===
+        "rejected" ||
+
+        request.status ===
+        "accepted_pot_update_error"
 
     ) {
 
         return;
     }
 
-    const uid =
-        String(
-            request.uid || ""
-        ).trim();
-
-    const requestRoundId =
-        String(
-            request.round_id || ""
-        ).trim();
-
-
-
-let seat =
-    String(
-        request.seat || ""
-    )
-        .trim()
-        .toUpperCase();
-
-// Java agar seatA/seatB/seatC bheje
-// to server A/B/C mein convert karega.
-if (seat === "SEATA") {
-    seat = "A";
-}
-
-if (seat === "SEATB") {
-    seat = "B";
-}
-
-if (seat === "SEATC") {
-    seat = "C";
-}
-    
-
-    const amount =
-        Number(
-            request.amount
-        );
-
-    // -------------------------------------------------
-    // UID
-    // -------------------------------------------------
-
-    if (!uid) {
-
-        await setRequestStatus(
-
-            requestId,
-
-            "rejected",
-
-            {
-                reason:
-                    "Missing UID"
-            }
-
-        );
-
-        return;
-    }
-
-    // -------------------------------------------------
-    // ROUND ID
-    // -------------------------------------------------
-
-    if (!requestRoundId) {
-
-        await setRequestStatus(
-
-            requestId,
-
-            "rejected",
-
-            {
-                reason:
-                    "Missing round_id"
-            }
-
-        );
-
-        return;
-    }
-
-    // -------------------------------------------------
-    // SEAT
-    // -------------------------------------------------
-
-    if (
-        !ALLOWED_SEATS.includes(
-            seat
-        )
-    ) {
-
-        await setRequestStatus(
-
-            requestId,
-
-            "rejected",
-
-            {
-                reason:
-                    "Invalid seat"
-            }
-
-        );
-
-        return;
-    }
-
-    // -------------------------------------------------
-    // AMOUNT
-    // -------------------------------------------------
-
-    if (
-        !ALLOWED_AMOUNTS.includes(
-            amount
-        )
-    ) {
-
-        await setRequestStatus(
-
-            requestId,
-
-            "rejected",
-
-            {
-                reason:
-                    "Invalid amount"
-            }
-
-        );
-
-        return;
-    }
-
-    // -------------------------------------------------
-    // CURRENT ROUND
-    // -------------------------------------------------
-
-    const roundSnapshot =
-        await roundRef.once(
-            "value"
-        );
-
-    const round =
-        roundSnapshot.val();
-
-    if (!round) {
-
-        await setRequestStatus(
-
-            requestId,
-
-            "rejected",
-
-            {
-                reason:
-                    "No active round"
-            }
-
-        );
-
-        return;
-    }
-
-    const currentRoundId =
-        String(
-            round.round_id || ""
-        );
-
-    // -------------------------------------------------
-    // ROUND MATCH
-    // -------------------------------------------------
-
-    if (
-        currentRoundId !==
-        requestRoundId
-    ) {
-
-        await setRequestStatus(
-
-            requestId,
-
-            "rejected",
-
-            {
-                reason:
-                    "Round expired"
-            }
-
-        );
-
-        return;
-    }
-
-    // -------------------------------------------------
-    // ONLY WAITING
-    // -------------------------------------------------
-
-    if (
-        round.status !==
-        "waiting"
-    ) {
-
-        await setRequestStatus(
-
-            requestId,
-
-            "rejected",
-
-            {
-                reason:
-                    "Selection closed"
-            }
-
-        );
-
-        return;
-    }
-
-    // -------------------------------------------------
-    // REQUEST CLAIM
-    // -------------------------------------------------
+    // =================================================
+    // CLAIM REQUEST
+    // =================================================
 
     const requestRef =
         betRequestsRef
-            .child(requestId);
+            .child(
+                requestId
+            );
 
     let claimed =
         false;
@@ -1259,7 +1222,6 @@ if (seat === "SEATC") {
 
                 return current;
             }
-
         );
 
     if (
@@ -1274,20 +1236,325 @@ if (seat === "SEATC") {
         return;
     }
 
-    // -------------------------------------------------
-    // USER REFERENCE
-    // -------------------------------------------------
+    // =================================================
+    // VERIFY UID
+    // =================================================
+
+    let uid;
+
+    try {
+
+        uid =
+            await verifyRequestUser(
+                request
+            );
+
+    } catch (error) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    error.message
+            }
+
+        );
+
+        console.error(
+            "UID VERIFY FAILED:",
+            error.message
+        );
+
+        return;
+    }
+
+    // =================================================
+    // REMOVE TOKEN FROM STORED REQUEST
+    // =================================================
+
+    try {
+
+        await requestRef
+            .child(
+                "idToken"
+            )
+            .remove();
+
+    } catch (error) {
+
+        console.error(
+            "TOKEN REMOVE ERROR:",
+            error
+        );
+    }
+
+    // =================================================
+    // ROUND ID
+    // =================================================
+
+    const requestRoundId =
+        String(
+            request.round_id || ""
+        ).trim();
+
+    if (!requestRoundId) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Missing round_id"
+            }
+
+        );
+
+        return;
+    }
+
+    // =================================================
+    // SEAT
+    // =================================================
+
+    const seat =
+        normalizeSeat(
+            request.seat
+        );
+
+    if (
+        !ALLOWED_SEATS.includes(
+            seat
+        )
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Invalid seat"
+            }
+
+        );
+
+        return;
+    }
+
+    // =================================================
+    // AMOUNT
+    // =================================================
+
+    const amount =
+        Number(
+            request.amount
+        );
+
+    if (
+        !Number.isSafeInteger(
+            amount
+        )
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Invalid amount"
+            }
+
+        );
+
+        return;
+    }
+
+    if (
+        !ALLOWED_AMOUNTS.includes(
+            amount
+        )
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Invalid chip amount"
+            }
+
+        );
+
+        return;
+    }
+
+    // =================================================
+    // READ CURRENT ROUND
+    // =================================================
+
+    const roundSnapshot =
+        await roundRef.once(
+            "value"
+        );
+
+    const round =
+        roundSnapshot.val();
+
+    if (!round) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "No active round"
+            }
+
+        );
+
+        return;
+    }
+
+    // =================================================
+    // CURRENT ROUND ID
+    // =================================================
+
+    const currentRoundId =
+        String(
+            round.round_id || ""
+        );
+
+    if (!currentRoundId) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Current round ID missing"
+            }
+
+        );
+
+        return;
+    }
+
+    // =================================================
+    // ROUND VERIFY
+    // =================================================
+
+    if (
+        currentRoundId !==
+        requestRoundId
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Round expired"
+            }
+
+        );
+
+        return;
+    }
+
+    // =================================================
+    // STATUS VERIFY
+    // =================================================
+
+    if (
+        String(
+            round.status || ""
+        ).toLowerCase() !==
+        "waiting"
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Selection closed"
+            }
+
+        );
+
+        return;
+    }
+
+    // =================================================
+    // REVEAL TIME VERIFY
+    // =================================================
+
+    const revealAt =
+        Number(
+            round.reveal_at || 0
+        );
+
+    if (
+        revealAt <= Date.now()
+    ) {
+
+        await setRequestStatus(
+
+            requestId,
+
+            "rejected",
+
+            {
+                reason:
+                    "Selection time expired"
+            }
+
+        );
+
+        return;
+    }
+
+    // =================================================
+    // USER
+    // =================================================
 
     const userRef =
         db.ref(
             `users/${uid}`
         );
 
-    let transactionResult;
+    let userTransaction;
 
     try {
 
-        transactionResult =
+        userTransaction =
             await userRef.transaction(
 
                 currentUser => {
@@ -1304,27 +1571,29 @@ if (seat === "SEATC") {
                     // ---------------------------------
 
                     if (
-
                         currentUser
                             .processedSelectionRequests &&
-
                         currentUser
                             .processedSelectionRequests[
                                 requestId
                             ]
-
                     ) {
 
                         return currentUser;
                     }
 
+                    // ---------------------------------
+                    // DIAMONDS
+                    // ---------------------------------
+
                     const diamonds =
                         Number(
-                            currentUser.diamonds || 0
+                            currentUser
+                                .diamonds || 0
                         );
 
                     if (
-                        !Number.isFinite(
+                        !Number.isSafeInteger(
                             diamonds
                         )
                     ) {
@@ -1333,7 +1602,7 @@ if (seat === "SEATC") {
                     }
 
                     // ---------------------------------
-                    // BALANCE CHECK
+                    // BALANCE
                     // ---------------------------------
 
                     if (
@@ -1344,60 +1613,48 @@ if (seat === "SEATC") {
                     }
 
                     // ---------------------------------
-                    // DEDUCT VIRTUAL DIAMONDS
+                    // DEDUCT
                     // ---------------------------------
 
                     currentUser.diamonds =
                         diamonds - amount;
 
                     // ---------------------------------
-                    // DEMAND OBJECT
+                    // DEMAND
                     // ---------------------------------
 
                     if (
-
                         !currentUser.demand ||
-
                         typeof currentUser.demand !==
                         "object"
-
                     ) {
 
                         currentUser.demand = {};
                     }
-
-                    // ---------------------------------
-                    // CURRENT DEMAND
-                    // ---------------------------------
 
                     const demandKey =
                         `seat${seat}`;
 
                     const oldDemand =
                         Number(
-
                             currentUser
                                 .demand[
                                     demandKey
                                 ] || 0
-
                         );
 
-                    currentUser
-                        .demand[
-                            demandKey
-                        ] =
-                            oldDemand + amount;
+                    currentUser.demand[
+                        demandKey
+                    ] =
+                        oldDemand + amount;
 
                     // ---------------------------------
-                    // REQUEST MARKER
+                    // PROCESSED MARKER
                     // ---------------------------------
 
                     if (
-
                         !currentUser
                             .processedSelectionRequests
-
                     ) {
 
                         currentUser
@@ -1411,7 +1668,6 @@ if (seat === "SEATC") {
 
                     return currentUser;
                 }
-
             );
 
     } catch (error) {
@@ -1437,12 +1693,12 @@ if (seat === "SEATC") {
         return;
     }
 
-    // -------------------------------------------------
+    // =================================================
     // BALANCE FAILED
-    // -------------------------------------------------
+    // =================================================
 
     if (
-        !transactionResult.committed
+        !userTransaction.committed
     ) {
 
         await setRequestStatus(
@@ -1453,7 +1709,7 @@ if (seat === "SEATC") {
 
             {
                 reason:
-                    "Insufficient diamonds or user unavailable"
+                    "Insufficient diamonds"
             }
 
         );
@@ -1461,18 +1717,21 @@ if (seat === "SEATC") {
         return;
     }
 
-    // -------------------------------------------------
-    // UPDATE POT
-    // -------------------------------------------------
+    // =================================================
+    // UPDATE SERVER POT
+    // =================================================
 
     const potRef =
         roundRef
             .child("pot")
             .child(seat);
 
+    let potUpdated =
+        false;
+
     try {
 
-        const potResult =
+        const potTransaction =
             await potRef.transaction(
 
                 currentPot => {
@@ -1482,68 +1741,102 @@ if (seat === "SEATC") {
                             currentPot || 0
                         );
 
-                    return oldPot + amount;
+                    if (
+                        !Number.isSafeInteger(
+                            oldPot
+                        )
+                    ) {
+
+                        return;
+                    }
+
+                    return (
+                        oldPot +
+                        amount
+                    );
                 }
+            );
+
+        potUpdated =
+            potTransaction.committed;
+
+    } catch (error) {
+
+        console.error(
+            "POT UPDATE ERROR:",
+            error
+        );
+    }
+
+    // =================================================
+    // POT FAILED -> ROLLBACK
+    // =================================================
+
+    if (!potUpdated) {
+
+        const rollback =
+            await rollbackUserSelection(
+
+                uid,
+
+                requestId,
+
+                seat,
+
+                amount
 
             );
 
-        if (
-            !potResult.committed
-        ) {
-
-            console.error(
-                "POT TRANSACTION FAILED"
-            );
+        if (rollback) {
 
             await setRequestStatus(
 
                 requestId,
 
-                "accepted_pot_update_error",
+                "rejected",
 
                 {
                     reason:
-                        "User updated but pot update failed"
+                        "Pot update failed; transaction rolled back"
                 }
 
             );
 
-            return;
+        } else {
+
+            await setRequestStatus(
+
+                requestId,
+
+                "manual_review",
+
+                {
+                    reason:
+                        "Pot update failed and automatic rollback failed"
+                }
+
+            );
         }
-
-    } catch (error) {
-
-        console.error(
-            "POT ERROR:",
-            error
-        );
-
-        await setRequestStatus(
-
-            requestId,
-
-            "accepted_pot_update_error",
-
-            {
-                reason:
-                    "User updated but pot update failed"
-            }
-
-        );
 
         return;
     }
 
-    // -------------------------------------------------
-    // MARK USER AS ROUND PARTICIPANT
-    // -------------------------------------------------
+    // =================================================
+    // ROUND PARTICIPANT
+    // =================================================
 
     try {
 
         await roundUsersRef
-            .child(currentRoundId)
-            .child(uid)
-            .set(true);
+            .child(
+                currentRoundId
+            )
+            .child(
+                uid
+            )
+            .set(
+                true
+            );
 
     } catch (error) {
 
@@ -1553,9 +1846,9 @@ if (seat === "SEATC") {
         );
     }
 
-    // -------------------------------------------------
-    // ACCEPT REQUEST
-    // -------------------------------------------------
+    // =================================================
+    // ACCEPT
+    // =================================================
 
     await setRequestStatus(
 
@@ -1643,7 +1936,7 @@ betRequestsRef.on(
         try {
 
             console.log(
-                "NEW SELECTION REQUEST:",
+                "NEW REQUEST:",
                 requestId
             );
 
@@ -1661,9 +1954,31 @@ betRequestsRef.on(
                 "REQUEST PROCESS ERROR:",
                 error
             );
+
+            try {
+
+                await setRequestStatus(
+
+                    requestId,
+
+                    "rejected",
+
+                    {
+                        reason:
+                            "Internal request processing error"
+                    }
+
+                );
+
+            } catch (statusError) {
+
+                console.error(
+                    "STATUS UPDATE ERROR:",
+                    statusError
+                );
+            }
         }
     }
-
 );
 
 console.log(
@@ -1694,9 +2009,9 @@ async function createNewRound(
 
     try {
 
-        // ---------------------------------------------
-        // READ OLD ROUND
-        // ---------------------------------------------
+        // =================================================
+        // READ CURRENT ROUND
+        // =================================================
 
         const snapshot =
             await roundRef.once(
@@ -1712,7 +2027,9 @@ async function createNewRound(
             );
 
         let oldNumber =
-            Number(oldRoundId);
+            Number(
+                oldRoundId
+            );
 
         if (
             !Number.isFinite(
@@ -1729,24 +2046,24 @@ async function createNewRound(
                 oldNumber + 1
             );
 
-        // ---------------------------------------------
-        // RESET PREVIOUS USERS
-        // ---------------------------------------------
+        // =================================================
+        // RESET PREVIOUS USER DEMAND
+        // =================================================
 
         await resetPreviousRoundUsers(
             oldRoundId
         );
 
-        // ---------------------------------------------
+        // =================================================
         // GENERATE CARDS
-        // ---------------------------------------------
+        // =================================================
 
         const cards =
             generateNineCards();
 
-        // ---------------------------------------------
-        // CALCULATE RESULTS
-        // ---------------------------------------------
+        // =================================================
+        // CALCULATE RESULT
+        // =================================================
 
         const results =
             calculateRoundResults(
@@ -1760,9 +2077,9 @@ async function createNewRound(
             now +
             WAITING_TIME;
 
-        // ---------------------------------------------
+        // =================================================
         // PUBLIC ROUND
-        // ---------------------------------------------
+        // =================================================
 
         const roundData = {
 
@@ -1799,9 +2116,9 @@ async function createNewRound(
 
         };
 
-        // ---------------------------------------------
+        // =================================================
         // PRIVATE SERVER ROUND
-        // ---------------------------------------------
+        // =================================================
 
         const privateRound = {
 
@@ -1819,13 +2136,17 @@ async function createNewRound(
 
         };
 
-        // ---------------------------------------------
-        // WRITE BOTH
-        // ---------------------------------------------
+        // =================================================
+        // WRITE PUBLIC ROUND
+        // =================================================
 
         await roundRef.set(
             roundData
         );
+
+        // =================================================
+        // WRITE PRIVATE SERVER ROUND
+        // =================================================
 
         await serverRoundRef.set(
             privateRound
@@ -1860,13 +2181,6 @@ async function createNewRound(
         );
 
         console.log(
-            "REVEAL AT:",
-            new Date(
-                revealAt
-            ).toISOString()
-        );
-
-        console.log(
             "A:",
             results.A.category
         );
@@ -1890,9 +2204,9 @@ async function createNewRound(
             "========================================"
         );
 
-        // ---------------------------------------------
-        // SCHEDULE
-        // ---------------------------------------------
+        // =================================================
+        // SCHEDULE REVEAL
+        // =================================================
 
         scheduleReveal(
 
@@ -1938,20 +2252,18 @@ async function revealRound(
         const latest =
             snapshot.val();
 
-        if (
-            !latest
-        ) {
+        if (!latest) {
 
             return false;
         }
 
         if (
-
             String(
                 latest.round_id
             ) !==
-            String(roundId)
-
+            String(
+                roundId
+            )
         ) {
 
             return false;
@@ -1965,9 +2277,9 @@ async function revealRound(
             return false;
         }
 
-        // ---------------------------------------------
-        // PRIVATE SERVER DATA
-        // ---------------------------------------------
+        // =================================================
+        // PRIVATE SERVER ROUND
+        // =================================================
 
         const privateSnapshot =
             await serverRoundRef.once(
@@ -1977,9 +2289,7 @@ async function revealRound(
         const privateRound =
             privateSnapshot.val();
 
-        if (
-            !privateRound
-        ) {
+        if (!privateRound) {
 
             console.error(
                 "PRIVATE SERVER ROUND NOT FOUND"
@@ -1989,12 +2299,12 @@ async function revealRound(
         }
 
         if (
-
             String(
                 privateRound.round_id
             ) !==
-            String(roundId)
-
+            String(
+                roundId
+            )
         ) {
 
             console.error(
@@ -2007,9 +2317,9 @@ async function revealRound(
         const revealedAt =
             Date.now();
 
-        // ---------------------------------------------
+        // =================================================
         // PUBLISH RESULT
-        // ---------------------------------------------
+        // =================================================
 
         await roundRef.update({
 
@@ -2123,7 +2433,6 @@ function scheduleReveal(
         },
 
         delay
-
     );
 }
 
@@ -2153,7 +2462,7 @@ function scheduleNextRoundAfterReveal(
         );
 
     console.log(
-        `NEXT ROUND ${delay} ms`
+        `NEXT ROUND IN ${delay} ms`
     );
 
     setTimeout(
@@ -2170,9 +2479,7 @@ function scheduleNextRoundAfterReveal(
                 const latest =
                     snapshot.val();
 
-                if (
-                    !latest
-                ) {
+                if (!latest) {
 
                     await createNewRound(
                         "next round missing"
@@ -2182,12 +2489,12 @@ function scheduleNextRoundAfterReveal(
                 }
 
                 if (
-
                     String(
                         latest.round_id
                     ) !==
-                    String(roundId)
-
+                    String(
+                        roundId
+                    )
                 ) {
 
                     return;
@@ -2216,7 +2523,6 @@ function scheduleNextRoundAfterReveal(
         },
 
         delay
-
     );
 }
 
@@ -2246,9 +2552,9 @@ async function reconcileRound() {
         const round =
             snapshot.val();
 
-        // ---------------------------------------------
+        // =================================================
         // NO ROUND
-        // ---------------------------------------------
+        // =================================================
 
         if (!round) {
 
@@ -2277,12 +2583,13 @@ async function reconcileRound() {
         const now =
             Date.now();
 
-        // ---------------------------------------------
+        // =================================================
         // WAITING
-        // ---------------------------------------------
+        // =================================================
 
         if (
-            status === "waiting"
+            status ===
+            "waiting"
         ) {
 
             if (
@@ -2303,18 +2610,18 @@ async function reconcileRound() {
                 await revealRound(
                     roundId
                 );
-
             }
 
             return;
         }
 
-        // ---------------------------------------------
+        // =================================================
         // REVEAL
-        // ---------------------------------------------
+        // =================================================
 
         if (
-            status === "reveal"
+            status ===
+            "reveal"
         ) {
 
             let revealedAt =
@@ -2350,15 +2657,14 @@ async function reconcileRound() {
                 await createNewRound(
                     "reconcile reveal finished"
                 );
-
             }
 
             return;
         }
 
-        // ---------------------------------------------
+        // =================================================
         // UNKNOWN
-        // ---------------------------------------------
+        // =================================================
 
         console.log(
             "UNKNOWN ROUND STATUS:",
@@ -2399,9 +2705,9 @@ async function resumeExistingRound() {
         const round =
             snapshot.val();
 
-        // ---------------------------------------------
+        // =================================================
         // NO ROUND
-        // ---------------------------------------------
+        // =================================================
 
         if (!round) {
 
@@ -2462,13 +2768,14 @@ async function resumeExistingRound() {
             "========================================"
         );
 
-        // ---------------------------------------------
+        // =================================================
         // WAITING ACTIVE
-        // ---------------------------------------------
+        // =================================================
 
         if (
 
-            status === "waiting" &&
+            status ===
+            "waiting" &&
 
             revealAt > now
 
@@ -2485,13 +2792,14 @@ async function resumeExistingRound() {
             return;
         }
 
-        // ---------------------------------------------
+        // =================================================
         // WAITING EXPIRED
-        // ---------------------------------------------
+        // =================================================
 
         if (
 
-            status === "waiting" &&
+            status ===
+            "waiting" &&
 
             revealAt <= now
 
@@ -2504,12 +2812,13 @@ async function resumeExistingRound() {
             return;
         }
 
-        // ---------------------------------------------
+        // =================================================
         // REVEAL
-        // ---------------------------------------------
+        // =================================================
 
         if (
-            status === "reveal"
+            status ===
+            "reveal"
         ) {
 
             let revealedAt =
@@ -2559,9 +2868,9 @@ async function resumeExistingRound() {
             return;
         }
 
-        // ---------------------------------------------
+        // =================================================
         // UNKNOWN
-        // ---------------------------------------------
+        // =================================================
 
         await createNewRound(
             "startup unknown status"
@@ -2584,7 +2893,9 @@ app.get(
     "/",
     (req, res) => {
 
-        res.status(200).json({
+        res.status(
+            200
+        ).json({
 
             ok:
                 true,
@@ -2606,6 +2917,12 @@ app.get(
 
             selection_processor:
                 "enabled",
+
+            pot:
+                "server accepted total",
+
+            winner:
+                "server generated",
 
             reconciler:
                 "enabled",
@@ -2635,7 +2952,9 @@ app.get(
             const round =
                 snapshot.val();
 
-            res.status(200).json({
+            res.status(
+                200
+            ).json({
 
                 ok:
                     true,
@@ -2661,6 +2980,11 @@ app.get(
                         ? round.reveal_at
                         : null,
 
+                pot:
+                    round
+                        ? round.pot
+                        : null,
+
                 waiting_seconds:
                     WAITING_TIME / 1000,
 
@@ -2679,7 +3003,9 @@ app.get(
                 error
             );
 
-            res.status(500).json({
+            res.status(
+                500
+            ).json({
 
                 ok:
                     false,
@@ -2725,7 +3051,9 @@ app.get(
                 });
             }
 
-            res.status(200).json({
+            res.status(
+                200
+            ).json({
 
                 ok:
                     true,
@@ -2745,7 +3073,9 @@ app.get(
                 error
             );
 
-            res.status(500).json({
+            res.status(
+                500
+            ).json({
 
                 ok:
                     false,
@@ -2815,7 +3145,9 @@ app.post(
                 });
             }
 
-            res.status(200).json({
+            res.status(
+                200
+            ).json({
 
                 ok:
                     true,
@@ -2838,7 +3170,9 @@ app.post(
                 error
             );
 
-            res.status(500).json({
+            res.status(
+                500
+            ).json({
 
                 ok:
                     false,
@@ -2968,11 +3302,19 @@ const server =
             );
 
             console.log(
-                "SELECTION PROCESSOR: ENABLED"
+                "UID VERIFICATION: ENABLED"
             );
 
             console.log(
-                "POT UPDATE: ENABLED"
+                "ROUND VERIFICATION: ENABLED"
+            );
+
+            console.log(
+                "CHIP VALIDATION: ENABLED"
+            );
+
+            console.log(
+                "DIAMOND VALIDATION: ENABLED"
             );
 
             console.log(
@@ -2980,7 +3322,16 @@ const server =
             );
 
             console.log(
-                "NEXT ROUND DEMAND RESET: ENABLED"
+                "POT UPDATE: ENABLED"
+            );
+
+            console.log(
+                "POT MODE:",
+                "ACTUAL ACCEPTED TOTAL"
+            );
+
+            console.log(
+                "NEXT ROUND RESET: ENABLED"
             );
 
             console.log(
@@ -3007,9 +3358,9 @@ const server =
                 );
             }
 
-            // -----------------------------------------
+            // =================================================
             // RECONCILER
-            // -----------------------------------------
+            // =================================================
 
             setInterval(
 
@@ -3058,7 +3409,9 @@ async function shutdown(
                     "HTTP SERVER CLOSED"
                 );
 
-                process.exit(0);
+                process.exit(
+                    0
+                );
             }
         );
 
@@ -3069,7 +3422,9 @@ async function shutdown(
             error
         );
 
-        process.exit(1);
+        process.exit(
+            1
+        );
     }
 }
 
@@ -3080,11 +3435,15 @@ async function shutdown(
 process.on(
     "SIGTERM",
     () =>
-        shutdown("SIGTERM")
+        shutdown(
+            "SIGTERM"
+        )
 );
 
 process.on(
     "SIGINT",
     () =>
-        shutdown("SIGINT")
+        shutdown(
+            "SIGINT"
+        )
 );
