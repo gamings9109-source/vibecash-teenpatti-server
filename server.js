@@ -11,21 +11,30 @@ app.use(express.json());
 // SERVER CONFIG
 // =====================================================
 
-const PORT = process.env.PORT || 10000;
+const PORT =
+    process.env.PORT || 10000;
 
-const ROOM_ID = "567943";
+const ROOM_ID =
+    "567943";
 
-const WAITING_TIME = 20 * 1000;
+// 20 seconds selection time
+const WAITING_TIME =
+    20 * 1000;
 
-const REVEAL_TIME = 10 * 1000;
+// 10 seconds cards visible
+const REVEAL_TIME =
+    10 * 1000;
 
-const RECONCILE_INTERVAL = 1000;
+// Reconcile every second
+const RECONCILE_INTERVAL =
+    1000;
 
+// Firebase Admin SDK service account
 const SERVICE_ACCOUNT_PATH =
     "/etc/secrets/firebase-service-account.json";
 
 // =====================================================
-// ENVIRONMENT CHECK
+// ENV CHECK
 // =====================================================
 
 if (!process.env.FIREBASE_DATABASE_URL) {
@@ -55,7 +64,7 @@ if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
 }
 
 // =====================================================
-// READ SERVICE ACCOUNT
+// SERVICE ACCOUNT
 // =====================================================
 
 let serviceAccount;
@@ -96,7 +105,7 @@ admin.initializeApp({
 });
 
 // =====================================================
-// FIREBASE DATABASE
+// DATABASE
 // =====================================================
 
 const db =
@@ -116,38 +125,46 @@ const betRequestsRef =
     teenPattiRef
         .child("betRequests");
 
+const serverRoundRef =
+    teenPattiRef
+        .child("server_round");
+
+const roundUsersRef =
+    teenPattiRef
+        .child("round_users");
+
 // =====================================================
 // LOCKS
 // =====================================================
 
-let roundOperationRunning = false;
+let roundOperationRunning =
+    false;
 
-let reconcileRunning = false;
+let reconcileRunning =
+    false;
 
 // =====================================================
-// ALLOWED SELECTIONS
+// ALLOWED AMOUNTS
 // =====================================================
 
 const ALLOWED_AMOUNTS = [
 
     10,
-
     100,
-
     1000,
-
     10000,
-
     100000
 
 ];
 
+// =====================================================
+// ALLOWED SEATS
+// =====================================================
+
 const ALLOWED_SEATS = [
 
     "A",
-
     "B",
-
     "C"
 
 ];
@@ -159,11 +176,8 @@ const ALLOWED_SEATS = [
 const suits = [
 
     "♠",
-
     "♥",
-
     "♦",
-
     "♣"
 
 ];
@@ -171,29 +185,17 @@ const suits = [
 const ranks = [
 
     "A",
-
     "2",
-
     "3",
-
     "4",
-
     "5",
-
     "6",
-
     "7",
-
     "8",
-
     "9",
-
     "10",
-
     "J",
-
     "Q",
-
     "K"
 
 ];
@@ -205,29 +207,17 @@ const ranks = [
 const rankValues = {
 
     "2": 2,
-
     "3": 3,
-
     "4": 4,
-
     "5": 5,
-
     "6": 6,
-
     "7": 7,
-
     "8": 8,
-
     "9": 9,
-
     "10": 10,
-
     "J": 11,
-
     "Q": 12,
-
     "K": 13,
-
     "A": 14
 
 };
@@ -300,21 +290,15 @@ function generateNineCards() {
     return {
 
         A1: deck[0],
-
         A2: deck[1],
-
         A3: deck[2],
 
         B1: deck[3],
-
         B2: deck[4],
-
         B3: deck[5],
 
         C1: deck[6],
-
         C2: deck[7],
-
         C3: deck[8]
 
     };
@@ -341,7 +325,7 @@ function parseCard(card) {
 }
 
 // =====================================================
-// GET CARD VALUES
+// CARD VALUES
 // =====================================================
 
 function getCardValues(cards) {
@@ -371,7 +355,6 @@ function isTrail(values) {
     return (
 
         values[0] === values[1] &&
-
         values[1] === values[2]
 
     );
@@ -413,9 +396,7 @@ function getSequenceHigh(values) {
     if (
 
         sorted[0] === 2 &&
-
         sorted[1] === 3 &&
-
         sorted[2] === 14
 
     ) {
@@ -449,7 +430,8 @@ function getPairInfo(values) {
 
     if (
 
-        values[0] === values[1]
+        values[0] ===
+        values[1]
 
     ) {
 
@@ -466,7 +448,8 @@ function getPairInfo(values) {
 
     if (
 
-        values[1] === values[2]
+        values[1] ===
+        values[2]
 
     ) {
 
@@ -559,9 +542,7 @@ function calculateHand(cards) {
     // -------------------------------------------------
 
     if (
-
         sequenceHigh !== null
-
     ) {
 
         return {
@@ -617,9 +598,7 @@ function calculateHand(cards) {
             compare:
                 [
                     pair.pair,
-
                     pair.kicker
-
                 ]
 
         };
@@ -674,7 +653,6 @@ function compareHands(first, second) {
         Math.max(
 
             firstCompare.length,
-
             secondCompare.length
 
         );
@@ -710,9 +688,7 @@ function calculateRoundResults(cards) {
         calculateHand([
 
             cards.A1,
-
             cards.A2,
-
             cards.A3
 
         ]);
@@ -721,9 +697,7 @@ function calculateRoundResults(cards) {
         calculateHand([
 
             cards.B1,
-
             cards.B2,
-
             cards.B3
 
         ]);
@@ -732,9 +706,7 @@ function calculateRoundResults(cards) {
         calculateHand([
 
             cards.C1,
-
             cards.C2,
-
             cards.C3
 
         ]);
@@ -745,13 +717,14 @@ function calculateRoundResults(cards) {
     let bestHand =
         handA;
 
+    // -------------------------------------------------
+    // CHECK B
+    // -------------------------------------------------
+
     const compareB =
         compareHands(
-
             handB,
-
             bestHand
-
         );
 
     if (compareB > 0) {
@@ -763,13 +736,14 @@ function calculateRoundResults(cards) {
             handB;
     }
 
+    // -------------------------------------------------
+    // CHECK C
+    // -------------------------------------------------
+
     const compareC =
         compareHands(
-
             handC,
-
             bestHand
-
         );
 
     if (compareC > 0) {
@@ -823,7 +797,9 @@ function calculateRoundResults(cards) {
         tiedPlayers.push("C");
     }
 
-    if (tiedPlayers.length > 1) {
+    if (
+        tiedPlayers.length > 1
+    ) {
 
         winner =
             tiedPlayers.join(",");
@@ -874,7 +850,7 @@ function calculateRoundResults(cards) {
 async function setRequestStatus(
     requestId,
     status,
-    extra
+    extra = {}
 ) {
 
     const updateData = {
@@ -883,17 +859,11 @@ async function setRequestStatus(
             status,
 
         processed_at:
-            Date.now()
+            Date.now(),
+
+        ...extra
 
     };
-
-    if (extra) {
-
-        Object.assign(
-            updateData,
-            extra
-        );
-    }
 
     await betRequestsRef
         .child(requestId)
@@ -901,7 +871,99 @@ async function setRequestStatus(
 }
 
 // =====================================================
-// PROCESS SELECTION REQUEST
+// RESET USERS FROM PREVIOUS ROUND
+// =====================================================
+//
+// Sirf un users ko reset karta hai jinhone previous
+// round mein selection ki thi.
+//
+// Isse Java ka:
+//
+// You:400170
+//
+// next round mein:
+//
+// You:0
+//
+// ho jayega.
+//
+
+async function resetPreviousRoundUsers(
+    previousRoundId
+) {
+
+    if (
+        !previousRoundId ||
+        previousRoundId === "0"
+    ) {
+
+        return;
+    }
+
+    try {
+
+        const snapshot =
+            await roundUsersRef
+                .child(previousRoundId)
+                .once("value");
+
+        if (!snapshot.exists()) {
+
+            return;
+        }
+
+        const updates = {};
+
+        snapshot.forEach(
+            child => {
+
+                const uid =
+                    child.key;
+
+                if (!uid) return;
+
+                updates[
+                    `users/${uid}/demand/seatA`
+                ] = 0;
+
+                updates[
+                    `users/${uid}/demand/seatB`
+                ] = 0;
+
+                updates[
+                    `users/${uid}/demand/seatC`
+                ] = 0;
+
+            }
+        );
+
+        if (
+            Object.keys(updates).length === 0
+        ) {
+
+            return;
+        }
+
+        await db.ref().update(
+            updates
+        );
+
+        console.log(
+            "PREVIOUS ROUND USER DEMAND RESET:",
+            previousRoundId
+        );
+
+    } catch (error) {
+
+        console.error(
+            "RESET PREVIOUS DEMAND ERROR:",
+            error
+        );
+    }
+}
+
+// =====================================================
+// PROCESS SELECTION
 // =====================================================
 
 async function processSelectionRequest(
@@ -910,11 +972,12 @@ async function processSelectionRequest(
 ) {
 
     if (!request) {
+
         return;
     }
 
     // -------------------------------------------------
-    // DO NOT PROCESS FINISHED REQUEST
+    // ALREADY PROCESSED
     // -------------------------------------------------
 
     if (
@@ -946,7 +1009,9 @@ async function processSelectionRequest(
             .toUpperCase();
 
     const amount =
-        Number(request.amount);
+        Number(
+            request.amount
+        );
 
     // -------------------------------------------------
     // UID
@@ -997,11 +1062,9 @@ async function processSelectionRequest(
     // -------------------------------------------------
 
     if (
-
         !ALLOWED_SEATS.includes(
             seat
         )
-
     ) {
 
         await setRequestStatus(
@@ -1025,11 +1088,9 @@ async function processSelectionRequest(
     // -------------------------------------------------
 
     if (
-
         !ALLOWED_AMOUNTS.includes(
             amount
         )
-
     ) {
 
         await setRequestStatus(
@@ -1088,10 +1149,8 @@ async function processSelectionRequest(
     // -------------------------------------------------
 
     if (
-
         currentRoundId !==
         requestRoundId
-
     ) {
 
         await setRequestStatus(
@@ -1111,14 +1170,12 @@ async function processSelectionRequest(
     }
 
     // -------------------------------------------------
-    // SELECTION OPEN ONLY WAITING
+    // ONLY WAITING
     // -------------------------------------------------
 
     if (
-
         round.status !==
         "waiting"
-
     ) {
 
         await setRequestStatus(
@@ -1138,20 +1195,23 @@ async function processSelectionRequest(
     }
 
     // -------------------------------------------------
-    // REQUEST LOCK / IDEMPOTENCY
+    // REQUEST CLAIM
     // -------------------------------------------------
 
     const requestRef =
         betRequestsRef
             .child(requestId);
 
-    let claimed = false;
+    let claimed =
+        false;
 
     const claimResult =
         await requestRef.transaction(
+
             current => {
 
                 if (!current) {
+
                     return;
                 }
 
@@ -1177,13 +1237,17 @@ async function processSelectionRequest(
                 current.processing_at =
                     Date.now();
 
-                claimed = true;
+                claimed =
+                    true;
 
                 return current;
             }
+
         );
 
-    if (!claimResult.committed) {
+    if (
+        !claimResult.committed
+    ) {
 
         return;
     }
@@ -1194,7 +1258,7 @@ async function processSelectionRequest(
     }
 
     // -------------------------------------------------
-    // USER
+    // USER REFERENCE
     // -------------------------------------------------
 
     const userRef =
@@ -1202,12 +1266,13 @@ async function processSelectionRequest(
             `users/${uid}`
         );
 
-    let userTransaction;
+    let transactionResult;
 
     try {
 
-        userTransaction =
+        transactionResult =
             await userRef.transaction(
+
                 currentUser => {
 
                     if (
@@ -1218,12 +1283,13 @@ async function processSelectionRequest(
                     }
 
                     // ---------------------------------
-                    // REQUEST ALREADY PROCESSED?
+                    // DUPLICATE REQUEST
                     // ---------------------------------
 
                     if (
 
-                        currentUser.processedSelectionRequests &&
+                        currentUser
+                            .processedSelectionRequests &&
 
                         currentUser
                             .processedSelectionRequests[
@@ -1240,25 +1306,21 @@ async function processSelectionRequest(
                             currentUser.diamonds || 0
                         );
 
-                    // ---------------------------------
-                    // BALANCE
-                    // ---------------------------------
-
                     if (
-
                         !Number.isFinite(
                             diamonds
                         )
-
                     ) {
 
                         return;
                     }
 
+                    // ---------------------------------
+                    // BALANCE CHECK
+                    // ---------------------------------
+
                     if (
-
                         diamonds < amount
-
                     ) {
 
                         return;
@@ -1272,7 +1334,7 @@ async function processSelectionRequest(
                         diamonds - amount;
 
                     // ---------------------------------
-                    // DEMAND
+                    // DEMAND OBJECT
                     // ---------------------------------
 
                     if (
@@ -1287,6 +1349,10 @@ async function processSelectionRequest(
                         currentUser.demand = {};
                     }
 
+                    // ---------------------------------
+                    // CURRENT DEMAND
+                    // ---------------------------------
+
                     const demandKey =
                         `seat${seat}`;
 
@@ -1300,10 +1366,11 @@ async function processSelectionRequest(
 
                         );
 
-                    currentUser.demand[
-                        demandKey
-                    ] =
-                        oldDemand + amount;
+                    currentUser
+                        .demand[
+                            demandKey
+                        ] =
+                            oldDemand + amount;
 
                     // ---------------------------------
                     // REQUEST MARKER
@@ -1327,6 +1394,7 @@ async function processSelectionRequest(
 
                     return currentUser;
                 }
+
             );
 
     } catch (error) {
@@ -1344,7 +1412,7 @@ async function processSelectionRequest(
 
             {
                 reason:
-                    "Transaction error"
+                    "User transaction error"
             }
 
         );
@@ -1353,11 +1421,11 @@ async function processSelectionRequest(
     }
 
     // -------------------------------------------------
-    // TRANSACTION FAILED
+    // BALANCE FAILED
     // -------------------------------------------------
 
     if (
-        !userTransaction.committed
+        !transactionResult.committed
     ) {
 
         await setRequestStatus(
@@ -1368,7 +1436,7 @@ async function processSelectionRequest(
 
             {
                 reason:
-                    "Insufficient diamonds"
+                    "Insufficient diamonds or user unavailable"
             }
 
         );
@@ -1377,7 +1445,7 @@ async function processSelectionRequest(
     }
 
     // -------------------------------------------------
-    // UPDATE ROUND POT
+    // UPDATE POT
     // -------------------------------------------------
 
     const potRef =
@@ -1387,8 +1455,9 @@ async function processSelectionRequest(
 
     try {
 
-        const potTransaction =
+        const potResult =
             await potRef.transaction(
+
                 currentPot => {
 
                     const oldPot =
@@ -1398,14 +1467,15 @@ async function processSelectionRequest(
 
                     return oldPot + amount;
                 }
+
             );
 
         if (
-            !potTransaction.committed
+            !potResult.committed
         ) {
 
             console.error(
-                "POT TRANSACTION NOT COMMITTED"
+                "POT TRANSACTION FAILED"
             );
 
             await setRequestStatus(
@@ -1416,7 +1486,7 @@ async function processSelectionRequest(
 
                 {
                     reason:
-                        "Selection accepted but pot update failed"
+                        "User updated but pot update failed"
                 }
 
             );
@@ -1427,7 +1497,7 @@ async function processSelectionRequest(
     } catch (error) {
 
         console.error(
-            "POT UPDATE ERROR:",
+            "POT ERROR:",
             error
         );
 
@@ -1439,7 +1509,7 @@ async function processSelectionRequest(
 
             {
                 reason:
-                    "Selection accepted but pot update failed"
+                    "User updated but pot update failed"
             }
 
         );
@@ -1448,7 +1518,26 @@ async function processSelectionRequest(
     }
 
     // -------------------------------------------------
-    // ACCEPT
+    // MARK USER AS ROUND PARTICIPANT
+    // -------------------------------------------------
+
+    try {
+
+        await roundUsersRef
+            .child(currentRoundId)
+            .child(uid)
+            .set(true);
+
+    } catch (error) {
+
+        console.error(
+            "ROUND USER MARK ERROR:",
+            error
+        );
+    }
+
+    // -------------------------------------------------
+    // ACCEPT REQUEST
     // -------------------------------------------------
 
     await setRequestStatus(
@@ -1461,6 +1550,9 @@ async function processSelectionRequest(
 
             processed_uid:
                 uid,
+
+            processed_round_id:
+                currentRoundId,
 
             processed_seat:
                 seat,
@@ -1492,7 +1584,7 @@ async function processSelectionRequest(
 
     console.log(
         "ROUND:",
-        requestRoundId
+        currentRoundId
     );
 
     console.log(
@@ -1515,7 +1607,9 @@ async function processSelectionRequest(
 // =====================================================
 
 betRequestsRef.on(
+
     "child_added",
+
     async snapshot => {
 
         const requestId =
@@ -1523,6 +1617,11 @@ betRequestsRef.on(
 
         const request =
             snapshot.val();
+
+        if (!requestId) {
+
+            return;
+        }
 
         try {
 
@@ -1542,11 +1641,12 @@ betRequestsRef.on(
         } catch (error) {
 
             console.error(
-                "SELECTION PROCESSOR ERROR:",
+                "REQUEST PROCESS ERROR:",
                 error
             );
         }
     }
+
 );
 
 console.log(
@@ -1557,20 +1657,29 @@ console.log(
 // CREATE NEW ROUND
 // =====================================================
 
-async function createNewRound(reason) {
+async function createNewRound(
+    reason
+) {
 
-    if (roundOperationRunning) {
+    if (
+        roundOperationRunning
+    ) {
 
         console.log(
-            "CREATE ROUND: operation already running"
+            "CREATE ROUND: already running"
         );
 
         return null;
     }
 
-    roundOperationRunning = true;
+    roundOperationRunning =
+        true;
 
     try {
+
+        // ---------------------------------------------
+        // READ OLD ROUND
+        // ---------------------------------------------
 
         const snapshot =
             await roundRef.once(
@@ -1580,33 +1689,47 @@ async function createNewRound(reason) {
         const current =
             snapshot.val() || {};
 
-        let oldRoundId =
-            Number(
-                current.round_id || 0
+        const oldRoundId =
+            String(
+                current.round_id || "0"
             );
+
+        let oldNumber =
+            Number(oldRoundId);
 
         if (
             !Number.isFinite(
-                oldRoundId
+                oldNumber
             )
         ) {
 
-            oldRoundId = 0;
+            oldNumber =
+                0;
         }
 
         const newRoundId =
-            oldRoundId + 1;
+            String(
+                oldNumber + 1
+            );
 
-        // -------------------------------------------------
-        // GENERATE SERVER CARDS
-        // -------------------------------------------------
+        // ---------------------------------------------
+        // RESET PREVIOUS USERS
+        // ---------------------------------------------
+
+        await resetPreviousRoundUsers(
+            oldRoundId
+        );
+
+        // ---------------------------------------------
+        // GENERATE CARDS
+        // ---------------------------------------------
 
         const cards =
             generateNineCards();
 
-        // -------------------------------------------------
-        // SERVER RESULT
-        // -------------------------------------------------
+        // ---------------------------------------------
+        // CALCULATE RESULTS
+        // ---------------------------------------------
 
         const results =
             calculateRoundResults(
@@ -1617,16 +1740,17 @@ async function createNewRound(reason) {
             Date.now();
 
         const revealAt =
-            now + WAITING_TIME;
+            now +
+            WAITING_TIME;
 
-        // -------------------------------------------------
-        // ROUND DATA
-        // -------------------------------------------------
+        // ---------------------------------------------
+        // PUBLIC ROUND
+        // ---------------------------------------------
 
         const roundData = {
 
             round_id:
-                String(newRoundId),
+                newRoundId,
 
             status:
                 "waiting",
@@ -1647,27 +1771,25 @@ async function createNewRound(reason) {
 
             },
 
-            // Cards are published at reveal.
-            cards: null,
+            cards:
+                null,
 
-            results: null,
+            results:
+                null,
 
-            winner: null
+            winner:
+                null
 
         };
 
-        // -------------------------------------------------
-        // PRIVATE SERVER DATA
-        // -------------------------------------------------
+        // ---------------------------------------------
+        // PRIVATE SERVER ROUND
+        // ---------------------------------------------
 
-        const secretRoundRef =
-            teenPattiRef
-                .child("server_round");
-
-        const secretData = {
+        const privateRound = {
 
             round_id:
-                String(newRoundId),
+                newRoundId,
 
             cards:
                 cards,
@@ -1680,16 +1802,16 @@ async function createNewRound(reason) {
 
         };
 
-        // -------------------------------------------------
-        // WRITE PUBLIC + SERVER ROUND
-        // -------------------------------------------------
+        // ---------------------------------------------
+        // WRITE BOTH
+        // ---------------------------------------------
 
         await roundRef.set(
             roundData
         );
 
-        await secretRoundRef.set(
-            secretData
+        await serverRoundRef.set(
+            privateRound
         );
 
         console.log(
@@ -1697,7 +1819,12 @@ async function createNewRound(reason) {
         );
 
         console.log(
-            `ROUND ${newRoundId} CREATED`
+            "NEW ROUND CREATED"
+        );
+
+        console.log(
+            "ROUND:",
+            newRoundId
         );
 
         console.log(
@@ -1706,11 +1833,13 @@ async function createNewRound(reason) {
         );
 
         console.log(
-            "STATUS: waiting"
+            "STATUS:",
+            "waiting"
         );
 
         console.log(
-            "WAITING: 20 SECONDS"
+            "WAITING:",
+            "20 seconds"
         );
 
         console.log(
@@ -1744,9 +1873,13 @@ async function createNewRound(reason) {
             "========================================"
         );
 
+        // ---------------------------------------------
+        // SCHEDULE
+        // ---------------------------------------------
+
         scheduleReveal(
 
-            String(newRoundId),
+            newRoundId,
 
             revealAt
 
@@ -1765,7 +1898,8 @@ async function createNewRound(reason) {
 
     } finally {
 
-        roundOperationRunning = false;
+        roundOperationRunning =
+            false;
     }
 }
 
@@ -1773,7 +1907,9 @@ async function createNewRound(reason) {
 // REVEAL ROUND
 // =====================================================
 
-async function revealRound(roundId) {
+async function revealRound(
+    roundId
+) {
 
     try {
 
@@ -1786,58 +1922,66 @@ async function revealRound(roundId) {
             snapshot.val();
 
         if (
+            !latest
+        ) {
 
-            !latest ||
+            return false;
+        }
 
-            String(latest.round_id) !==
+        if (
+
+            String(
+                latest.round_id
+            ) !==
             String(roundId)
 
         ) {
 
-            console.log(
-                `REVEAL ${roundId}: no longer current`
-            );
-
             return false;
         }
 
         if (
-
             latest.status !==
             "waiting"
-
         ) {
 
-            console.log(
-                `REVEAL ${roundId}: status already ${latest.status}`
+            return false;
+        }
+
+        // ---------------------------------------------
+        // PRIVATE SERVER DATA
+        // ---------------------------------------------
+
+        const privateSnapshot =
+            await serverRoundRef.once(
+                "value"
+            );
+
+        const privateRound =
+            privateSnapshot.val();
+
+        if (
+            !privateRound
+        ) {
+
+            console.error(
+                "PRIVATE SERVER ROUND NOT FOUND"
             );
 
             return false;
         }
 
-        // -------------------------------------------------
-        // READ PRIVATE SERVER ROUND
-        // -------------------------------------------------
-
-        const secretSnapshot =
-            await teenPattiRef
-                .child("server_round")
-                .once("value");
-
-        const secret =
-            secretSnapshot.val();
-
         if (
 
-            !secret ||
-
-            String(secret.round_id) !==
+            String(
+                privateRound.round_id
+            ) !==
             String(roundId)
 
         ) {
 
             console.error(
-                `REVEAL ${roundId}: private server round missing`
+                "PRIVATE ROUND ID MISMATCH"
             );
 
             return false;
@@ -1846,9 +1990,9 @@ async function revealRound(roundId) {
         const revealedAt =
             Date.now();
 
-        // -------------------------------------------------
-        // PUBLISH CARDS + RESULTS + WINNER
-        // -------------------------------------------------
+        // ---------------------------------------------
+        // PUBLISH RESULT
+        // ---------------------------------------------
 
         await roundRef.update({
 
@@ -1859,26 +2003,40 @@ async function revealRound(roundId) {
                 revealedAt,
 
             cards:
-                secret.cards,
+                privateRound.cards,
 
             results:
-                secret.results,
+                privateRound.results,
 
             winner:
-                secret.results.winner
+                privateRound.results.winner
 
         });
 
         console.log(
-            `ROUND ${roundId} REVEALED`
+            "========================================"
         );
 
         console.log(
-            "CARDS + RESULTS + WINNER PUBLISHED"
+            "ROUND REVEALED:",
+            roundId
         );
 
         console.log(
-            "CARDS VISIBLE FOR 10 SECONDS"
+            "CARDS PUBLISHED"
+        );
+
+        console.log(
+            "RESULTS PUBLISHED"
+        );
+
+        console.log(
+            "WINNER:",
+            privateRound.results.winner
+        );
+
+        console.log(
+            "========================================"
         );
 
         scheduleNextRoundAfterReveal(
@@ -1916,13 +2074,15 @@ function scheduleReveal(
 
             0,
 
-            Number(revealAt) -
+            Number(
+                revealAt
+            ) -
             Date.now()
 
         );
 
     console.log(
-        `Round ${roundId} will reveal in ${delay} ms`
+        `ROUND ${roundId} REVEAL IN ${delay} ms`
     );
 
     setTimeout(
@@ -1951,7 +2111,7 @@ function scheduleReveal(
 }
 
 // =====================================================
-// SCHEDULE NEXT ROUND
+// NEXT ROUND
 // =====================================================
 
 function scheduleNextRoundAfterReveal(
@@ -1960,7 +2120,9 @@ function scheduleNextRoundAfterReveal(
 ) {
 
     const nextRoundAt =
-        Number(revealedAt) +
+        Number(
+            revealedAt
+        ) +
         REVEAL_TIME;
 
     const delay =
@@ -1974,7 +2136,7 @@ function scheduleNextRoundAfterReveal(
         );
 
     console.log(
-        `Round ${roundId} next round in ${delay} ms`
+        `NEXT ROUND ${delay} ms`
     );
 
     setTimeout(
@@ -1992,16 +2154,11 @@ function scheduleNextRoundAfterReveal(
                     snapshot.val();
 
                 if (
-
-                    !latest ||
-
-                    String(latest.round_id) !==
-                    String(roundId)
-
+                    !latest
                 ) {
 
-                    console.log(
-                        `ROUND ${roundId}: no longer current`
+                    await createNewRound(
+                        "next round missing"
                     );
 
                     return;
@@ -2009,14 +2166,20 @@ function scheduleNextRoundAfterReveal(
 
                 if (
 
-                    latest.status !==
-                    "reveal"
+                    String(
+                        latest.round_id
+                    ) !==
+                    String(roundId)
 
                 ) {
 
-                    console.log(
-                        `ROUND ${roundId}: status changed to ${latest.status}`
-                    );
+                    return;
+                }
+
+                if (
+                    latest.status !==
+                    "reveal"
+                ) {
 
                     return;
                 }
@@ -2046,12 +2209,15 @@ function scheduleNextRoundAfterReveal(
 
 async function reconcileRound() {
 
-    if (reconcileRunning) {
+    if (
+        reconcileRunning
+    ) {
 
         return;
     }
 
-    reconcileRunning = true;
+    reconcileRunning =
+        true;
 
     try {
 
@@ -2063,9 +2229,9 @@ async function reconcileRound() {
         const round =
             snapshot.val();
 
-        // -------------------------------------------------
+        // ---------------------------------------------
         // NO ROUND
-        // -------------------------------------------------
+        // ---------------------------------------------
 
         if (!round) {
 
@@ -2094,15 +2260,12 @@ async function reconcileRound() {
         const now =
             Date.now();
 
-        // -------------------------------------------------
+        // ---------------------------------------------
         // WAITING
-        // -------------------------------------------------
+        // ---------------------------------------------
 
         if (
-
-            status ===
-            "waiting"
-
+            status === "waiting"
         ) {
 
             if (
@@ -2110,35 +2273,31 @@ async function reconcileRound() {
             ) {
 
                 await createNewRound(
-                    "invalid waiting round"
+                    "invalid reveal time"
                 );
 
                 return;
             }
 
             if (
-                now < revealAt
+                now >= revealAt
             ) {
 
-                return;
-            }
+                await revealRound(
+                    roundId
+                );
 
-            await revealRound(
-                roundId
-            );
+            }
 
             return;
         }
 
-        // -------------------------------------------------
+        // ---------------------------------------------
         // REVEAL
-        // -------------------------------------------------
+        // ---------------------------------------------
 
         if (
-
-            status ===
-            "reveal"
-
+            status === "reveal"
         ) {
 
             let revealedAt =
@@ -2168,25 +2327,25 @@ async function reconcileRound() {
                 REVEAL_TIME;
 
             if (
-                now < nextRoundAt
+                now >= nextRoundAt
             ) {
 
-                return;
-            }
+                await createNewRound(
+                    "reconcile reveal finished"
+                );
 
-            await createNewRound(
-                "reconcile reveal finished"
-            );
+            }
 
             return;
         }
 
-        // -------------------------------------------------
+        // ---------------------------------------------
         // UNKNOWN
-        // -------------------------------------------------
+        // ---------------------------------------------
 
         console.log(
-            `RECONCILE: UNKNOWN STATUS "${status}"`
+            "UNKNOWN ROUND STATUS:",
+            status
         );
 
         await createNewRound(
@@ -2202,7 +2361,8 @@ async function reconcileRound() {
 
     } finally {
 
-        reconcileRunning = false;
+        reconcileRunning =
+            false;
     }
 }
 
@@ -2222,9 +2382,9 @@ async function resumeExistingRound() {
         const round =
             snapshot.val();
 
-        // -------------------------------------------------
+        // ---------------------------------------------
         // NO ROUND
-        // -------------------------------------------------
+        // ---------------------------------------------
 
         if (!round) {
 
@@ -2258,7 +2418,7 @@ async function resumeExistingRound() {
         );
 
         console.log(
-            "STARTUP ROUND RECOVERY"
+            "STARTUP RECOVERY"
         );
 
         console.log(
@@ -2272,22 +2432,22 @@ async function resumeExistingRound() {
         );
 
         console.log(
-            "REVEAL AT:",
-            revealAt
+            "NOW:",
+            now
         );
 
         console.log(
-            "SERVER NOW:",
-            now
+            "REVEAL AT:",
+            revealAt
         );
 
         console.log(
             "========================================"
         );
 
-        // -------------------------------------------------
-        // WAITING
-        // -------------------------------------------------
+        // ---------------------------------------------
+        // WAITING ACTIVE
+        // ---------------------------------------------
 
         if (
 
@@ -2308,9 +2468,9 @@ async function resumeExistingRound() {
             return;
         }
 
-        // -------------------------------------------------
+        // ---------------------------------------------
         // WAITING EXPIRED
-        // -------------------------------------------------
+        // ---------------------------------------------
 
         if (
 
@@ -2327,14 +2487,12 @@ async function resumeExistingRound() {
             return;
         }
 
-        // -------------------------------------------------
+        // ---------------------------------------------
         // REVEAL
-        // -------------------------------------------------
+        // ---------------------------------------------
 
         if (
-
             status === "reveal"
-
         ) {
 
             let revealedAt =
@@ -2378,15 +2536,15 @@ async function resumeExistingRound() {
             }
 
             await createNewRound(
-                "startup expired reveal"
+                "startup reveal expired"
             );
 
             return;
         }
 
-        // -------------------------------------------------
+        // ---------------------------------------------
         // UNKNOWN
-        // -------------------------------------------------
+        // ---------------------------------------------
 
         await createNewRound(
             "startup unknown status"
@@ -2411,7 +2569,8 @@ app.get(
 
         res.status(200).json({
 
-            ok: true,
+            ok:
+                true,
 
             server:
                 "Teen Patti Server",
@@ -2428,10 +2587,10 @@ app.get(
             reveal_seconds:
                 REVEAL_TIME / 1000,
 
-            reconciler:
+            selection_processor:
                 "enabled",
 
-            selection_processor:
+            reconciler:
                 "enabled",
 
             startup_recovery:
@@ -2442,7 +2601,7 @@ app.get(
 );
 
 // =====================================================
-// HEALTH + CURRENT ROUND
+// HEALTH DETAIL
 // =====================================================
 
 app.get(
@@ -2461,7 +2620,8 @@ app.get(
 
             res.status(200).json({
 
-                ok: true,
+                ok:
+                    true,
 
                 server:
                     "running",
@@ -2477,6 +2637,11 @@ app.get(
                 round_status:
                     round
                         ? round.status
+                        : null,
+
+                reveal_at:
+                    round
+                        ? round.reveal_at
                         : null,
 
                 waiting_seconds:
@@ -2499,7 +2664,8 @@ app.get(
 
             res.status(500).json({
 
-                ok: false,
+                ok:
+                    false,
 
                 error:
                     error.message
@@ -2510,7 +2676,7 @@ app.get(
 );
 
 // =====================================================
-// GET CURRENT ROUND
+// GET ROUND
 // =====================================================
 
 app.get(
@@ -2524,14 +2690,17 @@ app.get(
                     "value"
                 );
 
-            const data =
+            const round =
                 snapshot.val();
 
-            if (!data) {
+            if (!round) {
 
-                return res.status(404).json({
+                return res.status(
+                    404
+                ).json({
 
-                    ok: false,
+                    ok:
+                        false,
 
                     error:
                         "No round found"
@@ -2541,13 +2710,14 @@ app.get(
 
             res.status(200).json({
 
-                ok: true,
+                ok:
+                    true,
 
                 room_id:
                     ROOM_ID,
 
                 round:
-                    data
+                    round
 
             });
 
@@ -2560,7 +2730,8 @@ app.get(
 
             res.status(500).json({
 
-                ok: false,
+                ok:
+                    false,
 
                 error:
                     error.message
@@ -2580,9 +2751,6 @@ app.post(
 
         try {
 
-            const secret =
-                process.env.ADMIN_SECRET;
-
             const suppliedSecret =
                 req.headers[
                     "x-admin-secret"
@@ -2592,13 +2760,17 @@ app.post(
 
                 !suppliedSecret ||
 
-                suppliedSecret !== secret
+                suppliedSecret !==
+                process.env.ADMIN_SECRET
 
             ) {
 
-                return res.status(401).json({
+                return res.status(
+                    401
+                ).json({
 
-                    ok: false,
+                    ok:
+                        false,
 
                     error:
                         "Unauthorized"
@@ -2613,9 +2785,12 @@ app.post(
 
             if (!result) {
 
-                return res.status(409).json({
+                return res.status(
+                    409
+                ).json({
 
-                    ok: false,
+                    ok:
+                        false,
 
                     error:
                         "Round operation already running"
@@ -2625,7 +2800,8 @@ app.post(
 
             res.status(200).json({
 
-                ok: true,
+                ok:
+                    true,
 
                 message:
                     "New round created",
@@ -2647,7 +2823,8 @@ app.post(
 
             res.status(500).json({
 
-                ok: false,
+                ok:
+                    false,
 
                 error:
                     error.message
@@ -2664,9 +2841,12 @@ app.post(
 app.use(
     (req, res) => {
 
-        res.status(404).json({
+        res.status(
+            404
+        ).json({
 
-            ok: false,
+            ok:
+                false,
 
             error:
                 "Endpoint not found"
@@ -2680,7 +2860,12 @@ app.use(
 // =====================================================
 
 app.use(
-    (error, req, res, next) => {
+    (
+        error,
+        req,
+        res,
+        next
+    ) => {
 
         console.error(
             "EXPRESS ERROR:",
@@ -2694,9 +2879,12 @@ app.use(
             return next(error);
         }
 
-        res.status(500).json({
+        res.status(
+            500
+        ).json({
 
-            ok: false,
+            ok:
+                false,
 
             error:
                 "Internal server error"
@@ -2727,11 +2915,17 @@ const server =
             );
 
             console.log(
-                `PORT: ${PORT}`
+                "========================================"
             );
 
             console.log(
-                `ROOM: ${ROOM_ID}`
+                "PORT:",
+                PORT
+            );
+
+            console.log(
+                "ROOM:",
+                ROOM_ID
             );
 
             console.log(
@@ -2739,15 +2933,21 @@ const server =
             );
 
             console.log(
-                "WAITING TIME: 20 SECONDS"
+                "WAITING:",
+                "20 SECONDS"
             );
 
             console.log(
-                "REVEAL TIME: 10 SECONDS"
+                "REVEAL:",
+                "10 SECONDS"
             );
 
             console.log(
-                "SERVER WINNER CALCULATION: ENABLED"
+                "SERVER CARDS: ENABLED"
+            );
+
+            console.log(
+                "SERVER WINNER: ENABLED"
             );
 
             console.log(
@@ -2755,7 +2955,19 @@ const server =
             );
 
             console.log(
-                "ROUND RECONCILER: ENABLED"
+                "POT UPDATE: ENABLED"
+            );
+
+            console.log(
+                "DEMAND UPDATE: ENABLED"
+            );
+
+            console.log(
+                "NEXT ROUND DEMAND RESET: ENABLED"
+            );
+
+            console.log(
+                "RECONCILER: ENABLED"
             );
 
             console.log(
@@ -2773,10 +2985,14 @@ const server =
             } catch (error) {
 
                 console.error(
-                    "STARTUP ROUND ERROR:",
+                    "STARTUP ERROR:",
                     error
                 );
             }
+
+            // -----------------------------------------
+            // RECONCILER
+            // -----------------------------------------
 
             setInterval(
 
@@ -2786,7 +3002,7 @@ const server =
                         .catch(error => {
 
                             console.error(
-                                "RECONCILER UNHANDLED ERROR:",
+                                "RECONCILER ERROR:",
                                 error
                             );
 
@@ -2808,7 +3024,9 @@ const server =
 // GRACEFUL SHUTDOWN
 // =====================================================
 
-async function shutdown(signal) {
+async function shutdown(
+    signal
+) {
 
     console.log(
         `${signal} RECEIVED`
@@ -2838,12 +3056,18 @@ async function shutdown(signal) {
     }
 }
 
+// =====================================================
+// SIGNALS
+// =====================================================
+
 process.on(
     "SIGTERM",
-    () => shutdown("SIGTERM")
+    () =>
+        shutdown("SIGTERM")
 );
 
 process.on(
     "SIGINT",
-    () => shutdown("SIGINT")
+    () =>
+        shutdown("SIGINT")
 );
