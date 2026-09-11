@@ -400,13 +400,21 @@ function calculateRoundResults(cards) {
   };
 }
 
-
 /* =========================================================
-   TOP 3 DEMAND DISPLAY
+   TOP 3 DEMAND DISPLAY - STICKY
    ---------------------------------------------------------
    Display-only ranking for the current round.
-   It does NOT decide the winner and does NOT create payout.
-   Reads round_users/{roundId}/{uid} and user profile data.
+
+   Rules:
+   1. Existing Top 3 stays in place when an outside user has
+      equal or lower demand than the current #3.
+   2. An outside user enters only when demand is STRICTLY
+      greater than the current #3.
+   3. If an existing Top 3 user's demand increases, ranks are
+      reordered by demand.
+   4. Equal demand never uses UID as a tie-breaker, so the
+      existing order is preserved.
+   5. This never decides cards, winner, balance, or payout.
    ========================================================= */
 
 function getProfileValue(user, keys) {
@@ -417,7 +425,6 @@ function getProfileValue(user, keys) {
 
     if (value !== undefined && value !== null) {
       const s = String(value).trim();
-
       if (s) return s;
     }
   }
@@ -432,28 +439,33 @@ async function updateTop3Demand(roundId) {
     const usersSnap =
       await roundUsersRef.child(roundId).once("value");
 
-    const usersData =
-      usersSnap.val() || {};
+    const usersData = usersSnap.val() || {};
+    const entriesByUid = new Map();
 
-    const entries = [];
-
+    // ---------------------------------------------------------
+    // CURRENT-ROUND DEMAND
+    // ---------------------------------------------------------
     for (const [uid, demand] of Object.entries(usersData)) {
       if (!demand || typeof demand !== "object") continue;
 
-      const seatA = Number(demand.seatA || 0);
-      const seatB = Number(demand.seatB || 0);
-      const seatC = Number(demand.seatC || 0);
+      const rawA = Number(demand.seatA || 0);
+      const rawB = Number(demand.seatB || 0);
+      const rawC = Number(demand.seatC || 0);
 
-      const total =
-        (Number.isSafeInteger(seatA) ? seatA : 0) +
-        (Number.isSafeInteger(seatB) ? seatB : 0) +
-        (Number.isSafeInteger(seatC) ? seatC : 0);
+      const seatA =
+        Number.isSafeInteger(rawA) && rawA >= 0 ? rawA : 0;
+      const seatB =
+        Number.isSafeInteger(rawB) && rawB >= 0 ? rawB : 0;
+      const seatC =
+        Number.isSafeInteger(rawC) && rawC >= 0 ? rawC : 0;
+
+      const total = seatA + seatB + seatC;
 
       if (!Number.isSafeInteger(total) || total <= 0) {
         continue;
       }
 
-      entries.push({
+      entriesByUid.set(String(uid), {
         uid: String(uid),
         total_demand: total,
         seatA,
@@ -462,32 +474,118 @@ async function updateTop3Demand(roundId) {
       });
     }
 
-    entries.sort((a, b) => {
-      if (b.total_demand !== a.total_demand) {
-        return b.total_demand - a.total_demand;
+    // ---------------------------------------------------------
+    // PREVIOUS TOP 3
+    // ---------------------------------------------------------
+    const previousSnap =
+      await roundRef.child("top3").once("value");
+
+    const previous = previousSnap.val() || {};
+    const previousOrder = [];
+
+    for (const rank of ["1", "2", "3"]) {
+      const item = previous[rank];
+      if (!item || !item.uid) continue;
+
+      const uid = String(item.uid);
+
+      if (entriesByUid.has(uid) && !previousOrder.includes(uid)) {
+        previousOrder.push(uid);
+      }
+    }
+
+    // ---------------------------------------------------------
+    // FRESH ROUND / EMPTY TOP 3
+    // ---------------------------------------------------------
+    if (previousOrder.length === 0) {
+      const initial = Array.from(entriesByUid.values());
+
+      // No UID tie-breaker. Equal demand keeps Firebase order.
+      initial.sort((a, b) => b.total_demand - a.total_demand);
+
+      previousOrder.push(
+        ...initial.slice(0, 3).map(item => item.uid)
+      );
+    }
+
+    let selectedUids = previousOrder.slice(0, 3);
+
+    // ---------------------------------------------------------
+    // FILL EMPTY POSITIONS
+    // ---------------------------------------------------------
+    if (selectedUids.length < 3) {
+      const candidates = Array.from(entriesByUid.values())
+        .filter(item => !selectedUids.includes(item.uid));
+
+      candidates.sort((a, b) => b.total_demand - a.total_demand);
+
+      for (const candidate of candidates) {
+        if (selectedUids.length >= 3) break;
+        selectedUids.push(candidate.uid);
+      }
+    }
+
+    // ---------------------------------------------------------
+    // OUTSIDE USER CAN ENTER ONLY WITH STRICTLY GREATER DEMAND
+    // ---------------------------------------------------------
+    while (selectedUids.length >= 3) {
+      const cutoffUid = selectedUids[2];
+      const cutoff = entriesByUid.get(cutoffUid);
+
+      if (!cutoff) break;
+
+      let bestCandidate = null;
+
+      for (const candidate of entriesByUid.values()) {
+        if (selectedUids.includes(candidate.uid)) continue;
+
+        if (candidate.total_demand > cutoff.total_demand) {
+          if (
+            bestCandidate === null ||
+            candidate.total_demand > bestCandidate.total_demand
+          ) {
+            bestCandidate = candidate;
+          }
+        }
       }
 
-      return String(a.uid).localeCompare(String(b.uid));
-    });
+      if (!bestCandidate) break;
 
-    const top = entries.slice(0, 3);
+      // Strictly greater only. Equal demand cannot replace #3.
+      selectedUids[2] = bestCandidate.uid;
 
+      // Existing Top 3 is reordered by demand. No UID tie-breaker.
+      selectedUids.sort((uidA, uidB) => {
+        const a = entriesByUid.get(uidA);
+        const b = entriesByUid.get(uidB);
+
+        if (!a || !b) return 0;
+        return b.total_demand - a.total_demand;
+      });
+    }
+
+    // ---------------------------------------------------------
+    // PROFILE + DISPLAY DATA
+    // ---------------------------------------------------------
     const result = {};
 
-    for (let i = 0; i < top.length; i++) {
-      const item = top[i];
+    for (let i = 0; i < selectedUids.length && i < 3; i++) {
+      const uid = selectedUids[i];
+      const item = entriesByUid.get(uid);
+
+      if (!item) continue;
 
       let profile = {};
 
       try {
         const profileSnap =
-          await db.ref(`users/${item.uid}`).once("value");
+          await db.ref(`users/${uid}`).once("value");
 
         profile = profileSnap.val() || {};
       } catch (profileError) {
         console.error(
           "TOP 3 PROFILE READ ERROR",
-          item.uid,
+          uid,
           profileError
         );
       }
@@ -495,6 +593,7 @@ async function updateTop3Demand(roundId) {
       result[String(i + 1)] = {
         rank: i + 1,
         uid: item.uid,
+
         name:
           getProfileValue(profile, [
             "name",
@@ -503,33 +602,32 @@ async function updateTop3Demand(roundId) {
             "userName"
           ]) || "User",
 
+        photo_url:
+          getProfileValue(profile, [
+            "photoUrl",
+            "photoURL",
+            "photo_url",
+            "profilePhoto",
+            "profile_photo",
+            "profile_image",
+            "profileImage",
+            "avatarUrl",
+            "avatarURL",
+            "avatar",
+            "imageUrl",
+            "imageURL",
+            "image",
+            "profilePic",
+            "profile_pic",
+            "profilePicture",
+            "profile_picture",
+            "picture",
+            "headUrl",
+            "headURL",
+            "portrait",
+            "icon"
+          ]),
 
-photo_url:
-  getProfileValue(profile, [
-    "photoUrl",
-    "photoURL",
-    "photo_url",
-    "profilePhoto",
-    "profile_photo",
-    "profile_image",
-    "profileImage",
-    "avatarUrl",
-    "avatarURL",
-    "avatar",
-    "imageUrl",
-    "imageURL",
-    "image",
-    "profilePic",
-    "profile_pic",
-    "profilePicture",
-    "profile_picture",
-    "picture",
-    "headUrl",
-    "headURL",
-    "portrait",
-    "icon"
-  ]),
-        
         total_demand: item.total_demand,
         seatA: item.seatA,
         seatB: item.seatB,
@@ -538,6 +636,9 @@ photo_url:
       };
     }
 
+    // ---------------------------------------------------------
+    // SAVE
+    // ---------------------------------------------------------
     await roundRef.child("top3").set({
       1: result["1"] || null,
       2: result["2"] || null,
@@ -546,10 +647,10 @@ photo_url:
     });
 
     console.log(
-      "TOP 3 UPDATED",
+      "TOP 3 UPDATED - STICKY",
       {
         roundId,
-        top3: Object.values(result).map((x) => ({
+        top3: Object.values(result).map(x => ({
           rank: x.rank,
           uid: x.uid,
           name: x.name,
@@ -1022,10 +1123,6 @@ async function processSelectionRequest(
     );
   }
 
-  // Update the display-only Top 3 demand ranking.
-  // This never changes cards, winner, balance, or payout.
-  await updateTop3Demand(roundId);
-
   console.log(
     "SELECTION ACCEPTED",
     {
@@ -1153,15 +1250,7 @@ async function createNewRound(reason) {
 
       cards: null,
       results: null,
-      winner: null,
-
-      // Current-round Top 3 demand display.
-      top3: {
-        1: null,
-        2: null,
-        3: null,
-        updated_at: now
-      }
+      winner: null
     };
 
     await roundRef.set(roundData);
@@ -1467,10 +1556,6 @@ async function resumeExistingRound() {
     revealAt > now
   ) {
     startPotDisplay(id);
-
-    // Rebuild Top 3 in case the server restarted.
-    await updateTop3Demand(id);
-
     scheduleReveal(
       id,
       revealAt
@@ -1545,12 +1630,6 @@ app.get("/", (req, res) => {
     pot_display_max:
       POT_MAX,
 
-    top3_demand:
-      "enabled",
-
-    top3_demand_source:
-      "current round round_users",
-
     winner:
       "server generated",
 
@@ -1587,9 +1666,6 @@ app.get("/health", async (req, res) => {
       pot_display:
         round?.pot_display || null,
 
-      top3:
-        round?.top3 || null,
-
       pot_display_running:
         !!potDisplayTimer,
 
@@ -1622,38 +1698,6 @@ app.get("/round", async (req, res) => {
       ok: true,
       room_id: ROOM_ID,
       round
-    });
-  } catch (e) {
-    res.status(500).json({
-      ok: false,
-      error: e.message
-    });
-  }
-});
-
-app.get("/top3", async (req, res) => {
-  try {
-    const snap =
-      await roundRef.once("value");
-
-    const round = snap.val();
-
-    if (!round) {
-      return res.status(404).json({
-        ok: false,
-        error: "No round found"
-      });
-    }
-
-    res.json({
-      ok: true,
-      room_id: ROOM_ID,
-      round_id: round.round_id || null,
-      top3: round.top3 || {
-        1: null,
-        2: null,
-        3: null
-      }
     });
   } catch (e) {
     res.status(500).json({
