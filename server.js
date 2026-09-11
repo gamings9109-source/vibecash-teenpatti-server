@@ -49,6 +49,7 @@ const roundRef = teenPattiRef.child("round");
 const betRequestsRef = teenPattiRef.child("betRequests");
 const serverRoundRef = teenPattiRef.child("server_round");
 const roundUsersRef = teenPattiRef.child("round_users");
+const potDisplayRef = teenPattiRef.child("pot_display");
 
 const ALLOWED_AMOUNTS = [10, 100, 1000, 10000, 100000];
 const ALLOWED_SEATS = ["A", "B", "C"];
@@ -116,7 +117,7 @@ async function updatePotDisplay(roundId) {
     // Random Pot is shown only while the 20-second selection is open.
     if (String(round.status || "") !== "waiting") return;
 
-    await roundRef.child("pot_display").set(makeRandomPotDisplay());
+    await potDisplayRef.set(makeRandomPotDisplay());
   } catch (e) {
     console.error("POT DISPLAY UPDATE ERROR", e);
   }
@@ -587,41 +588,6 @@ async function updateTop3Demand(roundId) {
           "TOP 3 PROFILE READ ERROR",
           uid,
           profileError
-        );
-      }
-
-      // Firebase Auth fallback. If the RTDB profile does not contain
-      // name/photo, use the authenticated user's displayName/photoURL.
-      try {
-        const dbName = getProfileValue(profile, [
-          "name", "displayName", "username", "userName"
-        ]);
-
-        const dbPhoto = getProfileValue(profile, [
-          "photoUrl", "photoURL", "photo_url",
-          "profilePhoto", "profile_photo", "profile_image",
-          "profileImage", "avatarUrl", "avatarURL", "avatar",
-          "imageUrl", "imageURL", "image", "profilePic",
-          "profile_pic", "profilePicture", "profile_picture",
-          "picture", "headUrl", "headURL", "portrait", "icon"
-        ]);
-
-        if (!dbName || !dbPhoto) {
-          const authUser = await admin.auth().getUser(uid);
-
-          if (!dbName && authUser.displayName) {
-            profile.displayName = authUser.displayName;
-          }
-
-          if (!dbPhoto && authUser.photoURL) {
-            profile.photoURL = authUser.photoURL;
-          }
-        }
-      } catch (authProfileError) {
-        console.error(
-          "TOP 3 AUTH PROFILE FALLBACK ERROR",
-          uid,
-          authProfileError
         );
       }
 
@@ -1158,11 +1124,6 @@ async function processSelectionRequest(
     );
   }
 
-  // IMPORTANT: publish/update Top 3 after every accepted demand.
-  // Ranking is sticky: an outside user can replace #3 only when
-  // their current-round total demand is strictly greater.
-  await updateTop3Demand(roundId);
-
   console.log(
     "SELECTION ACCEPTED",
     {
@@ -1280,28 +1241,21 @@ async function createNewRound(reason) {
         C: 0
       },
 
-      // Display-only random Pot.
-      pot_display: {
-        A: 0,
-        B: 0,
-        C: 0,
-        updated_at: now
-      },
-
       cards: null,
       results: null,
-      winner: null,
-
-      // Current-round sticky Top 3 demand display.
-      top3: {
-        1: null,
-        2: null,
-        3: null,
-        updated_at: now
-      }
+      winner: null
     };
 
     await roundRef.set(roundData);
+
+    // Dedicated display-only path. Keeping this OUTSIDE round
+    // prevents the Java round listener from firing every second.
+    await potDisplayRef.set({
+      A: 0,
+      B: 0,
+      C: 0,
+      updated_at: now
+    });
 
     await serverRoundRef.set({
       round_id: newRoundId,
@@ -1604,10 +1558,6 @@ async function resumeExistingRound() {
     revealAt > now
   ) {
     startPotDisplay(id);
-
-    // Rebuild current-round Top 3 after a server restart.
-    await updateTop3Demand(id);
-
     scheduleReveal(
       id,
       revealAt
@@ -1715,8 +1665,8 @@ app.get("/health", async (req, res) => {
         round?.pot || null,
 
       // What Java should display as Pot.
-      pot_display:
-        round?.pot_display || null,
+      // Stored outside round so it does not refresh the round listener.
+      pot_display: (await potDisplayRef.once("value")).val() || null,
 
       pot_display_running:
         !!potDisplayTimer,
@@ -1746,10 +1696,13 @@ app.get("/round", async (req, res) => {
       });
     }
 
+    const potDisplaySnap = await potDisplayRef.once("value");
+
     res.json({
       ok: true,
       room_id: ROOM_ID,
-      round
+      round,
+      pot_display: potDisplaySnap.val() || null
     });
   } catch (e) {
     res.status(500).json({
