@@ -502,15 +502,34 @@ async function updateTop3Demand(roundId) {
             "username",
             "userName"
           ]) || "User",
-        photo_url:
-          getProfileValue(profile, [
-            "photoUrl",
-            "photoURL",
-            "profilePhoto",
-            "profile_image",
-            "avatar",
-            "image"
-          ]),
+
+
+photo_url:
+  getProfileValue(profile, [
+    "photoUrl",
+    "photoURL",
+    "photo_url",
+    "profilePhoto",
+    "profile_photo",
+    "profile_image",
+    "profileImage",
+    "avatarUrl",
+    "avatarURL",
+    "avatar",
+    "imageUrl",
+    "imageURL",
+    "image",
+    "profilePic",
+    "profile_pic",
+    "profilePicture",
+    "profile_picture",
+    "picture",
+    "headUrl",
+    "headURL",
+    "portrait",
+    "icon"
+  ]),
+        
         total_demand: item.total_demand,
         seatA: item.seatA,
         seatB: item.seatB,
