@@ -49,7 +49,6 @@ const roundRef = teenPattiRef.child("round");
 const betRequestsRef = teenPattiRef.child("betRequests");
 const serverRoundRef = teenPattiRef.child("server_round");
 const roundUsersRef = teenPattiRef.child("round_users");
-const potDisplayRef = teenPattiRef.child("pot_display");
 
 const ALLOWED_AMOUNTS = [10, 100, 1000, 10000, 100000];
 const ALLOWED_SEATS = ["A", "B", "C"];
@@ -117,7 +116,7 @@ async function updatePotDisplay(roundId) {
     // Random Pot is shown only while the 20-second selection is open.
     if (String(round.status || "") !== "waiting") return;
 
-    await potDisplayRef.set(makeRandomPotDisplay());
+    await roundRef.child("pot_display").set(makeRandomPotDisplay());
   } catch (e) {
     console.error("POT DISPLAY UPDATE ERROR", e);
   }
@@ -1241,21 +1240,20 @@ async function createNewRound(reason) {
         C: 0
       },
 
+      // Display-only random Pot.
+      pot_display: {
+        A: 0,
+        B: 0,
+        C: 0,
+        updated_at: now
+      },
+
       cards: null,
       results: null,
       winner: null
     };
 
     await roundRef.set(roundData);
-
-    // Dedicated display-only path. Keeping this OUTSIDE round
-    // prevents the Java round listener from firing every second.
-    await potDisplayRef.set({
-      A: 0,
-      B: 0,
-      C: 0,
-      updated_at: now
-    });
 
     await serverRoundRef.set({
       round_id: newRoundId,
@@ -1665,8 +1663,8 @@ app.get("/health", async (req, res) => {
         round?.pot || null,
 
       // What Java should display as Pot.
-      // Stored outside round so it does not refresh the round listener.
-      pot_display: (await potDisplayRef.once("value")).val() || null,
+      pot_display:
+        round?.pot_display || null,
 
       pot_display_running:
         !!potDisplayTimer,
@@ -1696,13 +1694,10 @@ app.get("/round", async (req, res) => {
       });
     }
 
-    const potDisplaySnap = await potDisplayRef.once("value");
-
     res.json({
       ok: true,
       room_id: ROOM_ID,
-      round,
-      pot_display: potDisplaySnap.val() || null
+      round
     });
   } catch (e) {
     res.status(500).json({
