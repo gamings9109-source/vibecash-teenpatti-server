@@ -590,6 +590,41 @@ async function updateTop3Demand(roundId) {
         );
       }
 
+      // Firebase Auth fallback. If the RTDB profile does not contain
+      // name/photo, use the authenticated user's displayName/photoURL.
+      try {
+        const dbName = getProfileValue(profile, [
+          "name", "displayName", "username", "userName"
+        ]);
+
+        const dbPhoto = getProfileValue(profile, [
+          "photoUrl", "photoURL", "photo_url",
+          "profilePhoto", "profile_photo", "profile_image",
+          "profileImage", "avatarUrl", "avatarURL", "avatar",
+          "imageUrl", "imageURL", "image", "profilePic",
+          "profile_pic", "profilePicture", "profile_picture",
+          "picture", "headUrl", "headURL", "portrait", "icon"
+        ]);
+
+        if (!dbName || !dbPhoto) {
+          const authUser = await admin.auth().getUser(uid);
+
+          if (!dbName && authUser.displayName) {
+            profile.displayName = authUser.displayName;
+          }
+
+          if (!dbPhoto && authUser.photoURL) {
+            profile.photoURL = authUser.photoURL;
+          }
+        }
+      } catch (authProfileError) {
+        console.error(
+          "TOP 3 AUTH PROFILE FALLBACK ERROR",
+          uid,
+          authProfileError
+        );
+      }
+
       result[String(i + 1)] = {
         rank: i + 1,
         uid: item.uid,
@@ -1123,6 +1158,11 @@ async function processSelectionRequest(
     );
   }
 
+  // IMPORTANT: publish/update Top 3 after every accepted demand.
+  // Ranking is sticky: an outside user can replace #3 only when
+  // their current-round total demand is strictly greater.
+  await updateTop3Demand(roundId);
+
   console.log(
     "SELECTION ACCEPTED",
     {
@@ -1250,7 +1290,15 @@ async function createNewRound(reason) {
 
       cards: null,
       results: null,
-      winner: null
+      winner: null,
+
+      // Current-round sticky Top 3 demand display.
+      top3: {
+        1: null,
+        2: null,
+        3: null,
+        updated_at: now
+      }
     };
 
     await roundRef.set(roundData);
@@ -1556,6 +1604,10 @@ async function resumeExistingRound() {
     revealAt > now
   ) {
     startPotDisplay(id);
+
+    // Rebuild current-round Top 3 after a server restart.
+    await updateTop3Demand(id);
+
     scheduleReveal(
       id,
       revealAt
