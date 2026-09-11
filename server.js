@@ -49,6 +49,10 @@ const roundRef = teenPattiRef.child("round");
 const betRequestsRef = teenPattiRef.child("betRequests");
 const serverRoundRef = teenPattiRef.child("server_round");
 const roundUsersRef = teenPattiRef.child("round_users");
+const top3Ref = teenPattiRef.child("top3");
+// Keep random Pot outside round so 1-second Pot updates do not
+// trigger the whole-round listener (which can redraw Top 3 photos).
+const potDisplayRef = teenPattiRef.child("pot_display");
 
 const ALLOWED_AMOUNTS = [10, 100, 1000, 10000, 100000];
 const ALLOWED_SEATS = ["A", "B", "C"];
@@ -116,7 +120,10 @@ async function updatePotDisplay(roundId) {
     // Random Pot is shown only while the 20-second selection is open.
     if (String(round.status || "") !== "waiting") return;
 
-    await roundRef.child("pot_display").set(makeRandomPotDisplay());
+    await potDisplayRef.set({
+      round_id: String(roundId),
+      ...makeRandomPotDisplay()
+    });
   } catch (e) {
     console.error("POT DISPLAY UPDATE ERROR", e);
   }
@@ -478,7 +485,7 @@ async function updateTop3Demand(roundId) {
     // PREVIOUS TOP 3
     // ---------------------------------------------------------
     const previousSnap =
-      await roundRef.child("top3").once("value");
+      await top3Ref.once("value");
 
     const previous = previousSnap.val() || {};
     const previousOrder = [];
@@ -639,7 +646,7 @@ async function updateTop3Demand(roundId) {
     // ---------------------------------------------------------
     // SAVE
     // ---------------------------------------------------------
-    await roundRef.child("top3").set({
+    await top3Ref.set({
       1: result["1"] || null,
       2: result["2"] || null,
       3: result["3"] || null,
@@ -1240,20 +1247,19 @@ async function createNewRound(reason) {
         C: 0
       },
 
-      // Display-only random Pot.
-      pot_display: {
-        A: 0,
-        B: 0,
-        C: 0,
-        updated_at: now
-      },
-
       cards: null,
       results: null,
       winner: null
     };
 
     await roundRef.set(roundData);
+
+    // Separate node: changing this every second will NOT fire the
+    // round listener used for cards/countdown/Top-3 photos.
+    await potDisplayRef.set({
+      round_id: newRoundId,
+      ...makeRandomPotDisplay()
+    });
 
     await serverRoundRef.set({
       round_id: newRoundId,
@@ -1662,12 +1668,15 @@ app.get("/health", async (req, res) => {
       actual_pot:
         round?.pot || null,
 
-      // What Java should display as Pot.
+      // What Java should display as Pot (separate node).
       pot_display:
-        round?.pot_display || null,
+        (await potDisplayRef.once("value")).val() || null,
 
       pot_display_running:
         !!potDisplayTimer,
+
+      top3_path:
+        `rooms/${ROOM_ID}/teen_patti/top3`,
 
       timestamp:
         Date.now()
