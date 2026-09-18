@@ -91,11 +91,9 @@ const serverRoundRef =
 const roundUsersRef =
   teenPattiRef.child("round_users");
 
-/* RECORD HISTORY */
 const recordsRef =
   teenPattiRef.child("records");
 
-/* ONLINE */
 const onlineUsersRef =
   teenPattiRef.child("onlineUsers");
 
@@ -2361,7 +2359,7 @@ async function processSelectionRequest(
   }
 
   /* =======================================================
-     USER BALANCE
+  USER BALANCE
   ======================================================= */
 
   const userRef =
@@ -2458,7 +2456,7 @@ async function processSelectionRequest(
   }
 
   /* =======================================================
-     ACTUAL POT
+  ACTUAL POT
   ======================================================= */
 
   const actualPotRef =
@@ -2534,7 +2532,7 @@ async function processSelectionRequest(
   }
 
   /* =======================================================
-     DEMAND
+  DEMAND
   ======================================================= */
 
   const demandUpdated =
@@ -2669,6 +2667,334 @@ betRequestsRef.on(
 );
 
 /* =========================================================
+WINNER PAYOUT
+WINNING SEAT DEMAND × 3
+========================================================= */
+
+async function payRoundWinners(
+  roundId,
+  winner
+) {
+
+  if (!roundId || !winner) {
+    return {};
+  }
+
+  const winningSeats =
+    String(winner)
+      .split(",")
+      .map(
+        (seat) =>
+          normalizeSeat(seat)
+      )
+      .filter(
+        (seat) =>
+          ALLOWED_SEATS.includes(seat)
+      );
+
+  if (
+    winningSeats.length === 0
+  ) {
+
+    console.log(
+      "NO VALID WINNING SEAT",
+      {
+        roundId,
+        winner
+      }
+    );
+
+    return {};
+
+  }
+
+  try {
+
+    const usersSnap =
+      await roundUsersRef
+        .child(String(roundId))
+        .once("value");
+
+    const users =
+      usersSnap.val() || {};
+
+    const payoutResults = {};
+
+    for (
+      const [uid, demand]
+      of Object.entries(users)
+    ) {
+
+      if (
+        !demand ||
+        typeof demand !== "object"
+      ) {
+        continue;
+      }
+
+      let winningDemand = 0;
+
+      if (
+        winningSeats.includes("A")
+      ) {
+
+        winningDemand +=
+          Number(
+            demand.seatA || 0
+          );
+
+      }
+
+      if (
+        winningSeats.includes("B")
+      ) {
+
+        winningDemand +=
+          Number(
+            demand.seatB || 0
+          );
+
+      }
+
+      if (
+        winningSeats.includes("C")
+      ) {
+
+        winningDemand +=
+          Number(
+            demand.seatC || 0
+          );
+
+      }
+
+      if (
+        !Number.isSafeInteger(
+          winningDemand
+        ) ||
+        winningDemand <= 0
+      ) {
+
+        continue;
+
+      }
+
+      const payout =
+        winningDemand * 3;
+
+      if (
+        !Number.isSafeInteger(
+          payout
+        ) ||
+        payout <= 0
+      ) {
+
+        console.error(
+          "INVALID PAYOUT",
+          {
+            uid,
+            winningDemand,
+            payout
+          }
+        );
+
+        continue;
+
+      }
+
+      const userRef =
+        db.ref(`users/${uid}`);
+
+      let transactionResult;
+
+      try {
+
+        transactionResult =
+          await userRef.transaction(
+            (user) => {
+
+              if (!user) {
+                return user;
+              }
+
+              user.processedTeenPattiPayouts =
+                user.processedTeenPattiPayouts ||
+                {};
+
+              /*
+               * SAME ROUND DOBARA PAY NAHI HOGA
+               */
+
+              if (
+                user
+                  .processedTeenPattiPayouts[
+                    String(roundId)
+                  ]
+              ) {
+
+                return user;
+
+              }
+
+              const currentDiamonds =
+                Number(
+                  user.diamonds || 0
+                );
+
+              if (
+                !Number.isSafeInteger(
+                  currentDiamonds
+                ) ||
+                currentDiamonds < 0
+              ) {
+
+                return;
+
+              }
+
+              user.diamonds =
+                currentDiamonds +
+                payout;
+
+              user
+                .processedTeenPattiPayouts[
+                  String(roundId)
+                ] = {
+
+                  round_id:
+                    String(roundId),
+
+                  winning_seats:
+                    winningSeats,
+
+                  winning_demand:
+                    winningDemand,
+
+                  payout:
+                    payout,
+
+                  paid_at:
+                    Date.now()
+
+                };
+
+              return user;
+
+            }
+          );
+
+      } catch (e) {
+
+        console.error(
+          "USER PAYOUT TRANSACTION ERROR",
+          {
+            uid,
+            roundId,
+            error: e
+          }
+        );
+
+        continue;
+
+      }
+
+      if (
+        transactionResult &&
+        transactionResult.committed
+      ) {
+
+        payoutResults[uid] = {
+
+          uid:
+            String(uid),
+
+          winning_demand:
+            winningDemand,
+
+          payout:
+            payout,
+
+          winning_seats:
+            winningSeats
+
+        };
+
+        console.log(
+          "TEEN PATTI WINNER PAID",
+          {
+
+            uid:
+              String(uid),
+
+            roundId:
+              String(roundId),
+
+            winningSeats,
+
+            winningDemand,
+
+            payout
+
+          }
+        );
+
+      }
+
+    }
+
+    /*
+     * ROUND KE ANDAR PAYOUT RESULT SAVE
+     */
+
+    await roundRef
+      .child("payouts")
+      .set({
+
+        round_id:
+          String(roundId),
+
+        winner:
+          String(winner),
+
+        results:
+          payoutResults,
+
+        paid_at:
+          Date.now()
+
+      });
+
+    console.log(
+      "ROUND PAYOUT COMPLETE",
+      {
+
+        roundId:
+          String(roundId),
+
+        winner:
+          String(winner),
+
+        results:
+          payoutResults
+
+      }
+    );
+
+    return payoutResults;
+
+  } catch (e) {
+
+    console.error(
+      "WINNER PAYOUT ERROR",
+      e
+    );
+
+    return {};
+
+  }
+
+}
+
+/* =========================================================
 CREATE NEW ROUND
 ========================================================= */
 
@@ -2759,6 +3085,9 @@ async function createNewRound(
         null,
 
       winner:
+        null,
+
+      payouts:
         null
 
     };
@@ -2931,7 +3260,7 @@ async function revealRound(
         .toUpperCase();
 
     /* =====================================================
-       REVEAL CURRENT ROUND
+    REVEAL CURRENT ROUND
     ===================================================== */
 
     await roundRef.update({
@@ -2954,7 +3283,18 @@ async function revealRound(
     });
 
     /* =====================================================
-       SAVE HISTORY RECORD
+    PAY WINNERS
+    WINNING DEMAND × 3
+    ===================================================== */
+
+    const payoutResults =
+      await payRoundWinners(
+        roundId,
+        winner
+      );
+
+    /* =====================================================
+    SAVE HISTORY RECORD
     ===================================================== */
 
     await recordsRef
@@ -2982,7 +3322,10 @@ async function revealRound(
           String(roundId),
 
         winner:
-          winner
+          winner,
+
+        payouts:
+          payoutResults
 
       }
     );
@@ -3469,7 +3812,13 @@ app.get(
         3,
 
       record_history:
-        true
+        true,
+
+      winner_payout:
+        true,
+
+      winner_payout_multiplier:
+        3
 
     });
 
@@ -3568,6 +3917,10 @@ app.get(
 
         records:
           records,
+
+        payouts:
+          round?.payouts ||
+          null,
 
         pot_display_running:
           !!potDisplayTimer,
@@ -3946,6 +4299,14 @@ const server =
 
       console.log(
         "SERVER WINNER: ENABLED"
+      );
+
+      console.log(
+        "WINNER PAYOUT: ENABLED"
+      );
+
+      console.log(
+        "WINNER PAYOUT MULTIPLIER: 3x"
       );
 
       console.log(
