@@ -2855,6 +2855,10 @@ async function payRoundWinners(
                 currentDiamonds +
                 payout;
 
+              // TODAY'S WIN
+user.teenPattiTodayWin =
+  Number(user.teenPattiTodayWin || 0) + payout;
+
               user
                 .processedTeenPattiPayouts[
                   String(roundId)
