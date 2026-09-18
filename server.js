@@ -20,65 +20,48 @@ const ONLINE_TIMEOUT = 30 * 1000;
 const ONLINE_CLEANUP_INTERVAL = 10 * 1000;
 const ONLINE_PREVIEW_COUNT = 3;
 
-/*
-
-Java client will create:
-
-teen_patti_global/onlineUsers/{uid}
-
-Server maintains:
-
-teen_patti_global/onlineStats
-
-onlineStats:
-
-{
-
-count: 5,
-
-users: {
-
-1: {...},
-
-2: {...},
-
-3: {...}
-
-},
-
-updated_at: ...
-
-}
-*/
-
-
 const POT_MIN = 10000;
 const POT_MAX = 99999;
 
 const SERVICE_ACCOUNT_PATH =
-"/etc/secrets/firebase-service-account.json";
+  "/etc/secrets/firebase-service-account.json";
+
+/* =========================================================
+ENVIRONMENT
+========================================================= */
 
 if (!process.env.FIREBASE_DATABASE_URL) {
-throw new Error("FIREBASE_DATABASE_URL environment variable is missing");
+  throw new Error(
+    "FIREBASE_DATABASE_URL environment variable is missing"
+  );
 }
 
 if (!process.env.ADMIN_SECRET) {
-throw new Error("ADMIN_SECRET environment variable is missing");
+  throw new Error(
+    "ADMIN_SECRET environment variable is missing"
+  );
 }
 
 if (!fs.existsSync(SERVICE_ACCOUNT_PATH)) {
-throw new Error(
-"Firebase service account file is missing: " + SERVICE_ACCOUNT_PATH
-);
+  throw new Error(
+    "Firebase service account file is missing: " +
+    SERVICE_ACCOUNT_PATH
+  );
 }
 
 const serviceAccount = JSON.parse(
-fs.readFileSync(SERVICE_ACCOUNT_PATH, "utf8")
+  fs.readFileSync(
+    SERVICE_ACCOUNT_PATH,
+    "utf8"
+  )
 );
 
 admin.initializeApp({
-credential: admin.credential.cert(serviceAccount),
-databaseURL: process.env.FIREBASE_DATABASE_URL
+  credential:
+    admin.credential.cert(serviceAccount),
+
+  databaseURL:
+    process.env.FIREBASE_DATABASE_URL
 });
 
 const db = admin.database();
@@ -87,74 +70,105 @@ const db = admin.database();
 GLOBAL GAME
 ========================================================= */
 
-const teenPattiRef = db.ref("teen_patti_global");
+const teenPattiRef =
+  db.ref("teen_patti_global");
 
-const roundRef = teenPattiRef.child("round");
-const potDisplayRef = teenPattiRef.child("pot_display");
-const top3Ref = teenPattiRef.child("top3");
-const betRequestsRef = teenPattiRef.child("betRequests");
-const serverRoundRef = teenPattiRef.child("server_round");
-const roundUsersRef = teenPattiRef.child("round_users");
-const recordsRef = teenPattiRef.child("records");
+const roundRef =
+  teenPattiRef.child("round");
 
+const potDisplayRef =
+  teenPattiRef.child("pot_display");
 
+const top3Ref =
+  teenPattiRef.child("top3");
+
+const betRequestsRef =
+  teenPattiRef.child("betRequests");
+
+const serverRoundRef =
+  teenPattiRef.child("server_round");
+
+const roundUsersRef =
+  teenPattiRef.child("round_users");
+
+/* RECORD HISTORY */
+const recordsRef =
+  teenPattiRef.child("records");
 
 /* ONLINE */
-const onlineUsersRef = teenPattiRef.child("onlineUsers");
-const onlineStatsRef = teenPattiRef.child("onlineStats");
+const onlineUsersRef =
+  teenPattiRef.child("onlineUsers");
+
+const onlineStatsRef =
+  teenPattiRef.child("onlineStats");
+
+/* =========================================================
+ALLOWED VALUES
+========================================================= */
 
 const ALLOWED_AMOUNTS = [
-10,
-100,
-1000,
-10000,
-100000
+  10,
+  100,
+  1000,
+  10000,
+  100000
 ];
 
 const ALLOWED_SEATS = [
-"A",
-"B",
-"C"
+  "A",
+  "B",
+  "C"
 ];
 
+/* =========================================================
+CARDS
+========================================================= */
+
 const suits = [
-"♠",
-"♥",
-"♦",
-"♣"
+  "♠",
+  "♥",
+  "♦",
+  "♣"
 ];
 
 const ranks = [
-"A",
-"2",
-"3",
-"4",
-"5",
-"6",
-"7",
-"8",
-"9",
-"10",
-"J",
-"Q",
-"K"
+  "A",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+  "J",
+  "Q",
+  "K"
 ];
 
 const rankValues = {
-"2": 2,
-"3": 3,
-"4": 4,
-"5": 5,
-"6": 6,
-"7": 7,
-"8": 8,
-"9": 9,
-"10": 10,
-"J": 11,
-"Q": 12,
-"K": 13,
-"A": 14
+
+  "2": 2,
+  "3": 3,
+  "4": 4,
+  "5": 5,
+  "6": 6,
+  "7": 7,
+  "8": 8,
+  "9": 9,
+  "10": 10,
+
+  "J": 11,
+  "Q": 12,
+  "K": 13,
+  "A": 14
+
 };
+
+/* =========================================================
+STATE
+========================================================= */
 
 let roundOperationRunning = false;
 let reconcileRunning = false;
@@ -169,190 +183,221 @@ RANDOM POT DISPLAY
 ========================================================= */
 
 function randomPotNumber() {
-return crypto.randomInt(
-POT_MIN,
-POT_MAX + 1
-);
+
+  return crypto.randomInt(
+    POT_MIN,
+    POT_MAX + 1
+  );
+
 }
 
 function makeRandomPotDisplay() {
-return {
-A: randomPotNumber(),
-B: randomPotNumber(),
-C: randomPotNumber(),
-updated_at: Date.now()
-};
-}
 
-async function updatePotDisplay(roundId) {
+  return {
 
-if (!roundId) return;
+    A: randomPotNumber(),
+    B: randomPotNumber(),
+    C: randomPotNumber(),
 
-try {
+    updated_at:
+      Date.now()
 
-const snap = await roundRef.once("value");  
-const round = snap.val();  
-
-if (!round) return;  
-
-if (  
-  String(round.round_id || "") !==  
-  String(roundId)  
-) {  
-  return;  
-}  
-
-if (  
-  String(round.status || "").toLowerCase() !==  
-  "waiting"  
-) {  
-  return;  
-}  
-
-await potDisplayRef.set(  
-  makeRandomPotDisplay()  
-);
-
-} catch (e) {
-
-console.error(  
-  "POT DISPLAY UPDATE ERROR",  
-  e  
-);
+  };
 
 }
+
+async function updatePotDisplay(
+  roundId
+) {
+
+  if (!roundId) {
+    return;
+  }
+
+  try {
+
+    const snap =
+      await roundRef.once(
+        "value"
+      );
+
+    const round =
+      snap.val();
+
+    if (!round) {
+      return;
+    }
+
+    if (
+      String(
+        round.round_id || ""
+      ) !==
+      String(roundId)
+    ) {
+      return;
+    }
+
+    if (
+      String(
+        round.status || ""
+      ).toLowerCase() !==
+      "waiting"
+    ) {
+      return;
+    }
+
+    await potDisplayRef.set(
+      makeRandomPotDisplay()
+    );
+
+  } catch (e) {
+
+    console.error(
+      "POT DISPLAY UPDATE ERROR",
+      e
+    );
+
+  }
+
 }
 
-function startPotDisplay(roundId) {
+function startPotDisplay(
+  roundId
+) {
 
-stopPotDisplay();
+  stopPotDisplay();
 
-potDisplayRoundId =
-String(roundId);
+  potDisplayRoundId =
+    String(roundId);
 
-updatePotDisplay(
-potDisplayRoundId
-).catch((e) => {
-console.error(
-"INITIAL POT DISPLAY ERROR",
-e
-);
-});
+  updatePotDisplay(
+    potDisplayRoundId
+  ).catch((e) => {
 
-potDisplayTimer =
-setInterval(() => {
+    console.error(
+      "INITIAL POT DISPLAY ERROR",
+      e
+    );
 
-updatePotDisplay(  
-    potDisplayRoundId  
-  ).catch((e) => {  
+  });
 
-    console.error(  
-      "POT DISPLAY TIMER ERROR",  
-      e  
-    );  
+  potDisplayTimer =
+    setInterval(() => {
 
-  });  
+      updatePotDisplay(
+        potDisplayRoundId
+      ).catch((e) => {
 
-}, 1000);
+        console.error(
+          "POT DISPLAY TIMER ERROR",
+          e
+        );
 
-console.log(
-"GLOBAL POT DISPLAY STARTED",
-potDisplayRoundId
-);
+      });
+
+    }, 1000);
+
+  console.log(
+    "GLOBAL POT DISPLAY STARTED",
+    potDisplayRoundId
+  );
+
 }
 
 function stopPotDisplay() {
 
-if (potDisplayTimer) {
+  if (potDisplayTimer) {
 
-clearInterval(  
-  potDisplayTimer  
-);  
+    clearInterval(
+      potDisplayTimer
+    );
 
-potDisplayTimer = null;
+    potDisplayTimer = null;
 
-}
+  }
 
-potDisplayRoundId = null;
+  potDisplayRoundId = null;
+
 }
 
 /* =========================================================
-ONLINE USERS
+ONLINE USERS CLEANUP
 ========================================================= */
-
-/*
-
-Remove users whose heartbeat is older than
-
-ONLINE_TIMEOUT.
-
-Java should update:
-
-onlineUsers/{uid}/last_seen
-
-every few seconds.
-*/
-
 
 async function cleanupOfflineUsers() {
 
-try {
+  try {
 
-const snap =  
-  await onlineUsersRef.once("value");  
+    const snap =
+      await onlineUsersRef.once(
+        "value"
+      );
 
-const users =  
-  snap.val() || {};  
+    const users =
+      snap.val() || {};
 
-const now = Date.now();  
+    const now =
+      Date.now();
 
-const updates = {};  
+    const updates = {};
 
-for (  
-  const [uid, user] of Object.entries(users)  
-) {  
+    for (
+      const [uid, user]
+      of Object.entries(users)
+    ) {
 
-  if (!user || typeof user !== "object") {  
-    updates[uid] = null;  
-    continue;  
-  }  
+      if (
+        !user ||
+        typeof user !== "object"
+      ) {
 
-  const lastSeen =  
-    Number(user.last_seen || 0);  
+        updates[uid] = null;
+        continue;
 
-  const online =  
-    user.online === true;  
+      }
 
-  if (  
-    !online ||  
-    !lastSeen ||  
-    now - lastSeen >  
-      ONLINE_TIMEOUT  
-  ) {  
+      const lastSeen =
+        Number(
+          user.last_seen || 0
+        );
 
-    updates[uid] = null;  
-  }  
-}  
+      const online =
+        user.online === true;
 
-if (  
-  Object.keys(updates).length > 0  
-) {  
+      if (
+        !online ||
+        !lastSeen ||
+        now - lastSeen >
+          ONLINE_TIMEOUT
+      ) {
 
-  await onlineUsersRef.update(  
-    updates  
-  );  
-}  
+        updates[uid] = null;
 
-await updateOnlineStats();
+      }
 
-} catch (e) {
+    }
 
-console.error(  
-  "ONLINE CLEANUP ERROR",  
-  e  
-);
+    if (
+      Object.keys(updates).length > 0
+    ) {
 
-}
+      await onlineUsersRef.update(
+        updates
+      );
+
+    }
+
+    await updateOnlineStats();
+
+  } catch (e) {
+
+    console.error(
+      "ONLINE CLEANUP ERROR",
+      e
+    );
+
+  }
+
 }
 
 /* =========================================================
@@ -361,637 +406,813 @@ ONLINE STATS
 
 async function updateOnlineStats() {
 
-try {
+  try {
 
-const snap =  
-  await onlineUsersRef.once("value");  
+    const snap =
+      await onlineUsersRef.once(
+        "value"
+      );
 
-const users =  
-  snap.val() || {};  
+    const users =
+      snap.val() || {};
 
-const now = Date.now();  
+    const now =
+      Date.now();
 
-const activeUsers = [];  
+    const activeUsers = [];
 
-for (  
-  const [uid, user] of Object.entries(users)  
-) {  
+    for (
+      const [uid, user]
+      of Object.entries(users)
+    ) {
 
-  if (  
-    !user ||  
-    typeof user !== "object"  
-  ) {  
-    continue;  
-  }  
+      if (
+        !user ||
+        typeof user !== "object"
+      ) {
+        continue;
+      }
 
-  const lastSeen =  
-    Number(user.last_seen || 0);  
+      const lastSeen =
+        Number(
+          user.last_seen || 0
+        );
 
-  if (  
-    user.online !== true ||  
-    !lastSeen ||  
-    now - lastSeen >  
-      ONLINE_TIMEOUT  
-  ) {  
-    continue;  
-  }  
+      if (
+        user.online !== true ||
+        !lastSeen ||
+        now - lastSeen >
+          ONLINE_TIMEOUT
+      ) {
+        continue;
+      }
 
-  activeUsers.push({  
+      activeUsers.push({
 
-    uid: String(  
-      user.uid || uid  
-    ),  
+        uid:
+          String(
+            user.uid || uid
+          ),
 
-    name: String(  
-      user.name || "User"  
-    ),  
+        name:
+          String(
+            user.name || "User"
+          ),
 
-    photo_url: String(  
-      user.photo_url || ""  
-    ),  
+        photo_url:
+          String(
+            user.photo_url || ""
+          ),
 
-    last_seen: lastSeen  
-  });  
-}  
+        last_seen:
+          lastSeen
 
-/*  
- * Newest active users first.  
- */  
+      });
 
-activeUsers.sort(  
-  (a, b) =>  
-    b.last_seen -  
-    a.last_seen  
-);  
+    }
 
-const preview = {};  
+    activeUsers.sort(
+      (a, b) =>
+        b.last_seen -
+        a.last_seen
+    );
 
-for (  
-  let i = 0;  
-  i < Math.min(  
-    ONLINE_PREVIEW_COUNT,  
-    activeUsers.length  
-  );  
-  i++  
-) {  
+    const preview = {};
 
-  preview[String(i + 1)] = {  
-    uid: activeUsers[i].uid,  
-    name: activeUsers[i].name,  
-    photo_url:  
-      activeUsers[i].photo_url  
-  };  
-}  
+    for (
+      let i = 0;
+      i <
+        Math.min(
+          ONLINE_PREVIEW_COUNT,
+          activeUsers.length
+        );
+      i++
+    ) {
 
-await onlineStatsRef.set({  
+      preview[
+        String(i + 1)
+      ] = {
 
-  count: activeUsers.length,  
+        uid:
+          activeUsers[i].uid,
 
-  1: preview["1"] || null,  
-  2: preview["2"] || null,  
-  3: preview["3"] || null,  
+        name:
+          activeUsers[i].name,
 
-  updated_at: Date.now()  
-});  
+        photo_url:
+          activeUsers[i].photo_url
 
-console.log(  
-  "ONLINE USERS:",  
-  activeUsers.length  
-);  
+      };
 
-return {  
-  count: activeUsers.length,  
-  users: preview  
-};
+    }
 
-} catch (e) {
+    await onlineStatsRef.set({
 
-console.error(  
-  "ONLINE STATS ERROR",  
-  e  
-);  
+      count:
+        activeUsers.length,
 
-return null;
+      1:
+        preview["1"] || null,
 
-}
+      2:
+        preview["2"] || null,
+
+      3:
+        preview["3"] || null,
+
+      updated_at:
+        Date.now()
+
+    });
+
+    console.log(
+      "ONLINE USERS:",
+      activeUsers.length
+    );
+
+    return {
+
+      count:
+        activeUsers.length,
+
+      users:
+        preview
+
+    };
+
+  } catch (e) {
+
+    console.error(
+      "ONLINE STATS ERROR",
+      e
+    );
+
+    return null;
+
+  }
+
 }
 
 /* =========================================================
-ONLINE USER PROFILE NORMALIZATION
+PROFILE NORMALIZATION
 ========================================================= */
 
-async function refreshOnlineUserProfile(uid) {
+async function refreshOnlineUserProfile(
+  uid
+) {
 
-try {
+  try {
 
-const ref =  
-  onlineUsersRef.child(uid);  
+    const ref =
+      onlineUsersRef.child(uid);
 
-const snap =  
-  await ref.once("value");  
+    const snap =
+      await ref.once(
+        "value"
+      );
 
-const data =  
-  snap.val();  
+    const data =
+      snap.val();
 
-if (!data) return;  
+    if (!data) {
+      return;
+    }
 
-let name =  
-  String(data.name || "").trim();  
+    let name =
+      String(
+        data.name || ""
+      ).trim();
 
-let photoUrl =  
-  String(data.photo_url || "").trim();  
+    let photoUrl =
+      String(
+        data.photo_url || ""
+      ).trim();
 
-if (!name || !photoUrl) {  
+    if (!name || !photoUrl) {
 
-  const profile =  
-    await getUserProfile(uid);  
+      const profile =
+        await getUserProfile(uid);
 
-  if (!name) {  
-    name = profile.name;  
-  }  
+      if (!name) {
+        name =
+          profile.name;
+      }
 
-  if (!photoUrl) {  
-    photoUrl =  
-      profile.photo_url;  
-  }  
-}  
+      if (!photoUrl) {
+        photoUrl =
+          profile.photo_url;
+      }
 
-await ref.update({  
+    }
 
-  uid: String(uid),  
+    await ref.update({
 
-  name: name || "User",  
+      uid:
+        String(uid),
 
-  photo_url:  
-    photoUrl || "",  
+      name:
+        name || "User",
 
-  online: true,  
+      photo_url:
+        photoUrl || "",
 
-  last_seen:  
-    Number(  
-      data.last_seen ||  
-      Date.now()  
-    )  
-});
+      online:
+        true,
 
-} catch (e) {
+      last_seen:
+        Number(
+          data.last_seen ||
+          Date.now()
+        )
 
-console.error(  
-  "ONLINE PROFILE REFRESH ERROR",  
-  uid,  
-  e  
-);
+    });
 
-}
+  } catch (e) {
+
+    console.error(
+      "ONLINE PROFILE REFRESH ERROR",
+      uid,
+      e
+    );
+
+  }
+
 }
 
 /* =========================================================
-ONLINE USERS LISTENER
+ONLINE LISTENERS
 ========================================================= */
 
 onlineUsersRef.on(
-"child_added",
-async (snapshot) => {
+  "child_added",
+  async (snapshot) => {
 
-const uid =  
-  snapshot.key;  
+    const uid =
+      snapshot.key;
 
-if (!uid) return;  
+    if (!uid) {
+      return;
+    }
 
-await refreshOnlineUserProfile(  
-  uid  
-);  
+    await refreshOnlineUserProfile(
+      uid
+    );
 
-await updateOnlineStats();
+    await updateOnlineStats();
 
-}
+  }
 );
 
 onlineUsersRef.on(
-"child_changed",
-async (snapshot) => {
+  "child_changed",
+  async () => {
 
-await updateOnlineStats();
+    await updateOnlineStats();
 
-}
+  }
 );
 
 onlineUsersRef.on(
-"child_removed",
-async () => {
+  "child_removed",
+  async () => {
 
-await updateOnlineStats();
+    await updateOnlineStats();
 
-}
+  }
 );
 
 /* =========================================================
-CARDS
+DECK
 ========================================================= */
 
 function createDeck() {
 
-const deck = [];
+  const deck = [];
 
-for (const suit of suits) {
+  for (
+    const suit of suits
+  ) {
 
-for (const rank of ranks) {  
+    for (
+      const rank of ranks
+    ) {
 
-  deck.push(  
-    `${rank}|${suit}`  
-  );  
-}
+      deck.push(
+        `${rank}|${suit}`
+      );
 
-}
+    }
 
-return deck;
+  }
+
+  return deck;
+
 }
 
 function shuffle(deck) {
 
-for (
-let i = deck.length - 1;
-i > 0;
-i--
-) {
+  for (
+    let i = deck.length - 1;
+    i > 0;
+    i--
+  ) {
 
-const j =  
-  crypto.randomInt(  
-    0,  
-    i + 1  
-  );  
+    const j =
+      crypto.randomInt(
+        0,
+        i + 1
+      );
 
-[  
-  deck[i],  
-  deck[j]  
-] = [  
-  deck[j],  
-  deck[i]  
-];
+    [
+      deck[i],
+      deck[j]
+    ] = [
+      deck[j],
+      deck[i]
+    ];
 
-}
+  }
 
-return deck;
+  return deck;
+
 }
 
 function generateNineCards() {
 
-const deck =
-shuffle(
-createDeck()
-);
+  const deck =
+    shuffle(
+      createDeck()
+    );
 
-return {
+  return {
 
-A1: deck[0],  
-A2: deck[1],  
-A3: deck[2],  
+    A1: deck[0],
+    A2: deck[1],
+    A3: deck[2],
 
-B1: deck[3],  
-B2: deck[4],  
-B3: deck[5],  
+    B1: deck[3],
+    B2: deck[4],
+    B3: deck[5],
 
-C1: deck[6],  
-C2: deck[7],  
-C3: deck[8]
+    C1: deck[6],
+    C2: deck[7],
+    C3: deck[8]
 
-};
+  };
+
 }
+
+/* =========================================================
+CARD LOGIC
+========================================================= */
 
 function parseCard(card) {
 
-const p =
-String(card).split("|");
+  const p =
+    String(card).split("|");
 
-return {
-rank: p[0],
-suit: p[1]
-};
+  return {
+
+    rank:
+      p[0],
+
+    suit:
+      p[1]
+
+  };
+
 }
 
 function getCardValues(cards) {
 
-return cards
-.map(
-(c) =>
-rankValues[
-parseCard(c).rank
-]
-)
-.sort(
-(a, b) => b - a
-);
+  return cards
+    .map(
+      (c) =>
+        rankValues[
+          parseCard(c).rank
+        ]
+    )
+    .sort(
+      (a, b) =>
+        b - a
+    );
+
 }
 
 function isTrail(v) {
 
-return (
-v[0] === v[1] &&
-v[1] === v[2]
-);
+  return (
+    v[0] === v[1] &&
+    v[1] === v[2]
+  );
+
 }
 
 function isColor(cards) {
 
-const p =
-cards.map(parseCard);
+  const p =
+    cards.map(
+      parseCard
+    );
 
-return (
-p[0].suit === p[1].suit &&
-p[1].suit === p[2].suit
-);
+  return (
+    p[0].suit === p[1].suit &&
+    p[1].suit === p[2].suit
+  );
+
 }
 
 function getSequenceHigh(values) {
 
-const v =
-[...values].sort(
-(a, b) => a - b
-);
+  const v =
+    [...values].sort(
+      (a, b) =>
+        a - b
+    );
 
-if (
-v[0] === 2 &&
-v[1] === 3 &&
-v[2] === 14
-) {
-return 3;
-}
+  if (
+    v[0] === 2 &&
+    v[1] === 3 &&
+    v[2] === 14
+  ) {
 
-if (
-v[1] === v[0] + 1 &&
-v[2] === v[1] + 1
-) {
-return v[2];
-}
+    return 3;
 
-return null;
+  }
+
+  if (
+    v[1] === v[0] + 1 &&
+    v[2] === v[1] + 1
+  ) {
+
+    return v[2];
+
+  }
+
+  return null;
+
 }
 
 function getPairInfo(v) {
 
-if (v[0] === v[1]) {
+  if (
+    v[0] === v[1]
+  ) {
 
-return {  
-  pair: v[0],  
-  kicker: v[2]  
-};
+    return {
 
-}
+      pair:
+        v[0],
 
-if (v[1] === v[2]) {
+      kicker:
+        v[2]
 
-return {  
-  pair: v[1],  
-  kicker: v[0]  
-};
+    };
 
-}
+  }
 
-return null;
+  if (
+    v[1] === v[2]
+  ) {
+
+    return {
+
+      pair:
+        v[1],
+
+      kicker:
+        v[0]
+
+    };
+
+  }
+
+  return null;
+
 }
 
 function calculateHand(cards) {
 
-const values =
-getCardValues(cards);
+  const values =
+    getCardValues(
+      cards
+    );
 
-const trail =
-isTrail(values);
+  const trail =
+    isTrail(values);
 
-const color =
-isColor(cards);
+  const color =
+    isColor(cards);
 
-const sequenceHigh =
-getSequenceHigh(values);
+  const sequenceHigh =
+    getSequenceHigh(
+      values
+    );
 
-const pair =
-getPairInfo(values);
+  const pair =
+    getPairInfo(
+      values
+    );
 
-if (trail) {
+  if (trail) {
 
-return {  
-  category: "Trail",  
-  category_rank: 6,  
-  compare: [values[0]]  
-};
+    return {
 
-}
+      category:
+        "Trail",
 
-if (
-color &&
-sequenceHigh !== null
-) {
+      category_rank:
+        6,
 
-return {  
-  category: "Pure Sequence",  
-  category_rank: 5,  
-  compare: [sequenceHigh]  
-};
+      compare:
+        [values[0]]
 
-}
+    };
 
-if (
-sequenceHigh !== null
-) {
+  }
 
-return {  
-  category: "Sequence",  
-  category_rank: 4,  
-  compare: [sequenceHigh]  
-};
+  if (
+    color &&
+    sequenceHigh !== null
+  ) {
 
-}
+    return {
 
-if (color) {
+      category:
+        "Pure Sequence",
 
-return {  
-  category: "Color",  
-  category_rank: 3,  
-  compare: values  
-};
+      category_rank:
+        5,
 
-}
+      compare:
+        [sequenceHigh]
 
-if (pair) {
+    };
 
-return {  
-  category: "Pair",  
-  category_rank: 2,  
-  compare: [  
-    pair.pair,  
-    pair.kicker  
-  ]  
-};
+  }
 
-}
+  if (
+    sequenceHigh !== null
+  ) {
 
-return {
-category: "High Card",
-category_rank: 1,
-compare: values
-};
+    return {
+
+      category:
+        "Sequence",
+
+      category_rank:
+        4,
+
+      compare:
+        [sequenceHigh]
+
+    };
+
+  }
+
+  if (color) {
+
+    return {
+
+      category:
+        "Color",
+
+      category_rank:
+        3,
+
+      compare:
+        values
+
+    };
+
+  }
+
+  if (pair) {
+
+    return {
+
+      category:
+        "Pair",
+
+      category_rank:
+        2,
+
+      compare:
+        [
+          pair.pair,
+          pair.kicker
+        ]
+
+    };
+
+  }
+
+  return {
+
+    category:
+      "High Card",
+
+    category_rank:
+      1,
+
+    compare:
+      values
+
+  };
+
 }
 
 function compareHands(a, b) {
 
-if (
-a.category_rank !==
-b.category_rank
+  if (
+    a.category_rank !==
+    b.category_rank
+  ) {
+
+    return (
+      a.category_rank -
+      b.category_rank
+    );
+
+  }
+
+  const ac =
+    a.compare || [];
+
+  const bc =
+    b.compare || [];
+
+  const len =
+    Math.max(
+      ac.length,
+      bc.length
+    );
+
+  for (
+    let i = 0;
+    i < len;
+    i++
+  ) {
+
+    const x =
+      ac[i] || 0;
+
+    const y =
+      bc[i] || 0;
+
+    if (x !== y) {
+
+      return x - y;
+
+    }
+
+  }
+
+  return 0;
+
+}
+
+function calculateRoundResults(
+  cards
 ) {
 
-return (  
-  a.category_rank -  
-  b.category_rank  
-);
+  const handA =
+    calculateHand([
+      cards.A1,
+      cards.A2,
+      cards.A3
+    ]);
 
-}
+  const handB =
+    calculateHand([
+      cards.B1,
+      cards.B2,
+      cards.B3
+    ]);
 
-const ac =
-a.compare || [];
+  const handC =
+    calculateHand([
+      cards.C1,
+      cards.C2,
+      cards.C3
+    ]);
 
-const bc =
-b.compare || [];
+  let best =
+    handA;
 
-const len =
-Math.max(
-ac.length,
-bc.length
-);
+  let winner =
+    "A";
 
-for (
-let i = 0;
-i < len;
-i++
-) {
+  if (
+    compareHands(
+      handB,
+      best
+    ) > 0
+  ) {
 
-const x =  
-  ac[i] || 0;  
+    best =
+      handB;
 
-const y =  
-  bc[i] || 0;  
+    winner =
+      "B";
 
-if (x !== y) {  
-  return x - y;  
-}
+  }
 
-}
+  if (
+    compareHands(
+      handC,
+      best
+    ) > 0
+  ) {
 
-return 0;
-}
+    best =
+      handC;
 
-function calculateRoundResults(cards) {
+    winner =
+      "C";
 
-const handA =
-calculateHand([
-cards.A1,
-cards.A2,
-cards.A3
-]);
+  }
 
-const handB =
-calculateHand([
-cards.B1,
-cards.B2,
-cards.B3
-]);
+  const tied = [];
 
-const handC =
-calculateHand([
-cards.C1,
-cards.C2,
-cards.C3
-]);
+  if (
+    compareHands(
+      handA,
+      best
+    ) === 0
+  ) {
 
-let best = handA;
-let winner = "A";
+    tied.push("A");
 
-if (
-compareHands(
-handB,
-best
-) > 0
-) {
+  }
 
-best = handB;  
-winner = "B";
+  if (
+    compareHands(
+      handB,
+      best
+    ) === 0
+  ) {
 
-}
+    tied.push("B");
 
-if (
-compareHands(
-handC,
-best
-) > 0
-) {
+  }
 
-best = handC;  
-winner = "C";
+  if (
+    compareHands(
+      handC,
+      best
+    ) === 0
+  ) {
 
-}
+    tied.push("C");
 
-const tied = [];
+  }
 
-if (
-compareHands(
-handA,
-best
-) === 0
-) {
-tied.push("A");
-}
+  if (
+    tied.length > 1
+  ) {
 
-if (
-compareHands(
-handB,
-best
-) === 0
-) {
-tied.push("B");
-}
+    winner =
+      tied.join(",");
 
-if (
-compareHands(
-handC,
-best
-) === 0
-) {
-tied.push("C");
-}
+  }
 
-if (tied.length > 1) {
-winner =
-tied.join(",");
-}
+  return {
 
-return {
+    A: {
 
-A: {  
-  category:  
-    handA.category,  
+      category:
+        handA.category,
 
-  category_rank:  
-    handA.category_rank  
-},  
+      category_rank:
+        handA.category_rank
 
-B: {  
-  category:  
-    handB.category,  
+    },
 
-  category_rank:  
-    handB.category_rank  
-},  
+    B: {
 
-C: {  
-  category:  
-    handC.category,  
+      category:
+        handB.category,
 
-  category_rank:  
-    handC.category_rank  
-},  
+      category_rank:
+        handB.category_rank
 
-winner
+    },
 
-};
+    C: {
+
+      category:
+        handC.category,
+
+      category_rank:
+        handC.category_rank
+
+    },
+
+    winner
+
+  };
+
 }
 
 /* =========================================================
@@ -999,531 +1220,585 @@ PROFILE
 ========================================================= */
 
 function getProfileValue(
-user,
-keys
+  user,
+  keys
 ) {
 
-if (
-!user ||
-typeof user !== "object"
-) {
-return "";
-}
+  if (
+    !user ||
+    typeof user !== "object"
+  ) {
 
-for (const key of keys) {
+    return "";
 
-const value =  
-  user[key];  
+  }
 
-if (  
-  value !== undefined &&  
-  value !== null  
-) {  
+  for (
+    const key of keys
+  ) {
 
-  const s =  
-    String(value).trim();  
+    const value =
+      user[key];
 
-  if (s) return s;  
-}
+    if (
+      value !== undefined &&
+      value !== null
+    ) {
 
-}
+      const s =
+        String(value).trim();
 
-return "";
+      if (s) {
+        return s;
+      }
+
+    }
+
+  }
+
+  return "";
+
 }
 
 const NAME_KEYS = [
 
-"name",
-"displayName",
-"display_name",
-"username",
-"userName",
-"user_name",
-"nickName",
-"nickname"
+  "name",
+  "displayName",
+  "display_name",
+  "username",
+  "userName",
+  "user_name",
+  "nickName",
+  "nickname"
+
 ];
 
 const PHOTO_KEYS = [
 
-"photoUrl",
-"photoURL",
-"photo_url",
-"photo",
+  "photoUrl",
+  "photoURL",
+  "photo_url",
+  "photo",
 
-"profilePhoto",
-"profile_photo",
-"profile_image",
-"profileImage",
+  "profilePhoto",
+  "profile_photo",
+  "profile_image",
+  "profileImage",
 
-"avatarUrl",
-"avatarURL",
-"avatar",
+  "avatarUrl",
+  "avatarURL",
+  "avatar",
 
-"imageUrl",
-"imageURL",
-"image",
+  "imageUrl",
+  "imageURL",
+  "image",
 
-"profilePic",
-"profile_pic",
+  "profilePic",
+  "profile_pic",
 
-"profilePicture",
-"profile_picture",
+  "profilePicture",
+  "profile_picture",
 
-"picture",
+  "picture",
 
-"headUrl",
-"headURL",
+  "headUrl",
+  "headURL",
 
-"portrait",
-"icon"
+  "portrait",
+  "icon"
+
 ];
 
-async function getUserProfile(uid) {
-
-let profile = {};
-
-try {
-
-const snap =  
-  await db  
-    .ref(`users/${uid}`)  
-    .once("value");  
-
-profile =  
-  snap.val() || {};
-
-} catch (e) {
-
-console.error(  
-  "PROFILE READ ERROR",  
-  uid,  
-  e  
-);
-
-}
-
-let name =
-getProfileValue(
-profile,
-NAME_KEYS
-);
-
-let photoUrl =
-getProfileValue(
-profile,
-PHOTO_KEYS
-);
-
-if (
-!name ||
-!photoUrl
+async function getUserProfile(
+  uid
 ) {
 
-try {  
+  let profile = {};
 
-  const authUser =  
-    await admin  
-      .auth()  
-      .getUser(uid);  
+  try {
 
-  if (  
-    !name &&  
-    authUser.displayName  
-  ) {  
+    const snap =
+      await db
+        .ref(`users/${uid}`)
+        .once("value");
 
-    name =  
-      String(  
-        authUser.displayName  
-      ).trim();  
-  }  
+    profile =
+      snap.val() || {};
 
-  if (  
-    !photoUrl &&  
-    authUser.photoURL  
-  ) {  
+  } catch (e) {
 
-    photoUrl =  
-      String(  
-        authUser.photoURL  
-      ).trim();  
-  }  
+    console.error(
+      "PROFILE READ ERROR",
+      uid,
+      e
+    );
 
-} catch (e) {  
+  }
 
-  console.error(  
-    "AUTH PROFILE FALLBACK ERROR",  
-    uid,  
-    e  
-  );  
-}
+  let name =
+    getProfileValue(
+      profile,
+      NAME_KEYS
+    );
 
-}
+  let photoUrl =
+    getProfileValue(
+      profile,
+      PHOTO_KEYS
+    );
 
-return {
+  if (
+    !name ||
+    !photoUrl
+  ) {
 
-name:  
-  name || "User",  
+    try {
 
-photo_url:  
-  photoUrl || ""
+      const authUser =
+        await admin
+          .auth()
+          .getUser(uid);
 
-};
+      if (
+        !name &&
+        authUser.displayName
+      ) {
+
+        name =
+          String(
+            authUser.displayName
+          ).trim();
+
+      }
+
+      if (
+        !photoUrl &&
+        authUser.photoURL
+      ) {
+
+        photoUrl =
+          String(
+            authUser.photoURL
+          ).trim();
+
+      }
+
+    } catch (e) {
+
+      console.error(
+        "AUTH PROFILE FALLBACK ERROR",
+        uid,
+        e
+      );
+
+    }
+
+  }
+
+  return {
+
+    name:
+      name || "User",
+
+    photo_url:
+      photoUrl || ""
+
+  };
+
 }
 
 /* =========================================================
-GLOBAL TOP 3
+TOP 3
 ========================================================= */
 
-async function updateTop3Demand(roundId) {
-
-if (!roundId) return null;
-
-try {
-
-const usersSnap =  
-  await roundUsersRef  
-    .child(roundId)  
-    .once("value");  
-
-const usersData =  
-  usersSnap.val() || {};  
-
-const entriesByUid =  
-  new Map();  
-
-for (  
-  const [uid, demand]  
-  of Object.entries(  
-    usersData  
-  )  
-) {  
-
-  if (  
-    !demand ||  
-    typeof demand !== "object"  
-  ) {  
-    continue;  
-  }  
-
-  const seatA =  
-    Number(  
-      demand.seatA || 0  
-    );  
-
-  const seatB =  
-    Number(  
-      demand.seatB || 0  
-    );  
-
-  const seatC =  
-    Number(  
-      demand.seatC || 0  
-    );  
-
-  const total =  
-    seatA +  
-    seatB +  
-    seatC;  
-
-  if (  
-    !Number.isSafeInteger(seatA) ||  
-    seatA < 0 ||  
-
-    !Number.isSafeInteger(seatB) ||  
-    seatB < 0 ||  
-
-    !Number.isSafeInteger(seatC) ||  
-    seatC < 0 ||  
-
-    !Number.isSafeInteger(total) ||  
-    total <= 0  
-  ) {  
-    continue;  
-  }  
-
-  entriesByUid.set(  
-    String(uid),  
-    {  
-      uid: String(uid),  
-      total_demand: total,  
-      seatA,  
-      seatB,  
-      seatC  
-    }  
-  );  
-}  
-
-const previousSnap =  
-  await top3Ref.once("value");  
-
-const previous =  
-  previousSnap.val() || {};  
-
-const previousOrder = [];  
-
-for (  
-  const rank of [  
-    "1",  
-    "2",  
-    "3"  
-  ]  
-) {  
-
-  const item =  
-    previous[rank];  
-
-  if (  
-    !item ||  
-    !item.uid  
-  ) {  
-    continue;  
-  }  
-
-  const uid =  
-    String(item.uid);  
-
-  if (  
-    entriesByUid.has(uid) &&  
-    !previousOrder.includes(uid)  
-  ) {  
-
-    previousOrder.push(uid);  
-  }  
-}  
-
-let selectedUids =  
-  previousOrder.slice(0, 3);  
-
-const candidates =  
-  Array.from(  
-    entriesByUid.values()  
-  )  
-  .filter(  
-    (item) =>  
-      !selectedUids.includes(  
-        item.uid  
-      )  
-  )  
-  .sort(  
-    (a, b) =>  
-      b.total_demand -  
-      a.total_demand  
-  );  
-
-for (  
-  const candidate  
-  of candidates  
-) {  
-
-  if (  
-    selectedUids.length >= 3  
-  ) {  
-    break;  
-  }  
-
-  selectedUids.push(  
-    candidate.uid  
-  );  
-}  
-
-if (  
-  selectedUids.length >= 3  
-) {  
-
-  while (true) {  
-
-    const cutoff =  
-      entriesByUid.get(  
-        selectedUids[2]  
-      );  
-
-    if (!cutoff) break;  
-
-    let bestCandidate =  
-      null;  
-
-    for (  
-      const candidate  
-      of entriesByUid.values()  
-    ) {  
-
-      if (  
-        selectedUids.includes(  
-          candidate.uid  
-        )  
-      ) {  
-        continue;  
-      }  
-
-      if (  
-        candidate.total_demand >  
-        cutoff.total_demand &&  
-        (  
-          !bestCandidate ||  
-          candidate.total_demand >  
-          bestCandidate.total_demand  
-        )  
-      ) {  
-
-        bestCandidate =  
-          candidate;  
-      }  
-    }  
-
-    if (!bestCandidate) {  
-      break;  
-    }  
-
-    selectedUids[2] =  
-      bestCandidate.uid;  
-
-    selectedUids.sort(  
-      (uidA, uidB) => {  
-
-        const a =  
-          entriesByUid.get(  
-            uidA  
-          );  
-
-        const b =  
-          entriesByUid.get(  
-            uidB  
-          );  
-
-        if (!a || !b) {  
-          return 0;  
-        }  
-
-        return (  
-          b.total_demand -  
-          a.total_demand  
-        );  
-      }  
-    );  
-  }  
-}  
-
-const result = {};  
-
-for (  
-  let i = 0;  
-  i < selectedUids.length &&  
-  i < 3;  
-  i++  
-) {  
-
-  const uid =  
-    selectedUids[i];  
-
-  const item =  
-    entriesByUid.get(uid);  
-
-  if (!item) continue;  
-
-  const oldItem =  
-    previous[  
-      String(i + 1)  
-    ];  
-
-  let profile;  
-
-  if (  
-    oldItem &&  
-    String(oldItem.uid) === uid &&  
-    oldItem.name !== undefined &&  
-    oldItem.photo_url !== undefined  
-  ) {  
-
-    profile = {  
-
-      name:  
-        String(  
-          oldItem.name || ""  
-        ).trim() || "User",  
-
-      photo_url:  
-        String(  
-          oldItem.photo_url || ""  
-        ).trim()  
-    };  
-
-  } else {  
-
-    profile =  
-      await getUserProfile(  
-        uid  
-      );  
-  }  
-
-  result[  
-    String(i + 1)  
-  ] = {  
-
-    rank: i + 1,  
-
-    uid:  
-      item.uid,  
-
-    name:  
-      profile.name ||  
-      "User",  
-
-    photo_url:  
-      profile.photo_url ||  
-      "",  
-
-    total_demand:  
-      item.total_demand,  
-
-    seatA:  
-      item.seatA,  
-
-    seatB:  
-      item.seatB,  
-
-    seatC:  
-      item.seatC  
-  };  
-}  
-
-await top3Ref.set({  
-
-  1:  
-    result["1"] ||  
-    null,  
-
-  2:  
-    result["2"] ||  
-    null,  
-
-  3:  
-    result["3"] ||  
-    null,  
-
-  round_id:  
-    String(roundId),  
-
-  updated_at:  
-    Date.now()  
-});  
-
-console.log(  
-  "GLOBAL TOP 3 UPDATED",  
-  result  
-);  
-
-return result;
-
-} catch (e) {
-
-console.error(  
-  "TOP 3 UPDATE ERROR",  
-  e  
-);  
-
-return null;
-
-}
+async function updateTop3Demand(
+  roundId
+) {
+
+  if (!roundId) {
+    return null;
+  }
+
+  try {
+
+    const usersSnap =
+      await roundUsersRef
+        .child(roundId)
+        .once("value");
+
+    const usersData =
+      usersSnap.val() || {};
+
+    const entriesByUid =
+      new Map();
+
+    for (
+      const [uid, demand]
+      of Object.entries(
+        usersData
+      )
+    ) {
+
+      if (
+        !demand ||
+        typeof demand !== "object"
+      ) {
+        continue;
+      }
+
+      const seatA =
+        Number(
+          demand.seatA || 0
+        );
+
+      const seatB =
+        Number(
+          demand.seatB || 0
+        );
+
+      const seatC =
+        Number(
+          demand.seatC || 0
+        );
+
+      const total =
+        seatA +
+        seatB +
+        seatC;
+
+      if (
+        !Number.isSafeInteger(seatA) ||
+        seatA < 0 ||
+
+        !Number.isSafeInteger(seatB) ||
+        seatB < 0 ||
+
+        !Number.isSafeInteger(seatC) ||
+        seatC < 0 ||
+
+        !Number.isSafeInteger(total) ||
+        total <= 0
+      ) {
+
+        continue;
+
+      }
+
+      entriesByUid.set(
+        String(uid),
+        {
+
+          uid:
+            String(uid),
+
+          total_demand:
+            total,
+
+          seatA,
+          seatB,
+          seatC
+
+        }
+      );
+
+    }
+
+    const previousSnap =
+      await top3Ref.once(
+        "value"
+      );
+
+    const previous =
+      previousSnap.val() || {};
+
+    const previousOrder = [];
+
+    for (
+      const rank of [
+        "1",
+        "2",
+        "3"
+      ]
+    ) {
+
+      const item =
+        previous[rank];
+
+      if (
+        !item ||
+        !item.uid
+      ) {
+        continue;
+      }
+
+      const uid =
+        String(item.uid);
+
+      if (
+        entriesByUid.has(uid) &&
+        !previousOrder.includes(uid)
+      ) {
+
+        previousOrder.push(uid);
+
+      }
+
+    }
+
+    let selectedUids =
+      previousOrder.slice(0, 3);
+
+    const candidates =
+      Array.from(
+        entriesByUid.values()
+      )
+        .filter(
+          (item) =>
+            !selectedUids.includes(
+              item.uid
+            )
+        )
+        .sort(
+          (a, b) =>
+            b.total_demand -
+            a.total_demand
+        );
+
+    for (
+      const candidate
+      of candidates
+    ) {
+
+      if (
+        selectedUids.length >= 3
+      ) {
+        break;
+      }
+
+      selectedUids.push(
+        candidate.uid
+      );
+
+    }
+
+    if (
+      selectedUids.length >= 3
+    ) {
+
+      while (true) {
+
+        const cutoff =
+          entriesByUid.get(
+            selectedUids[2]
+          );
+
+        if (!cutoff) {
+          break;
+        }
+
+        let bestCandidate =
+          null;
+
+        for (
+          const candidate
+          of entriesByUid.values()
+        ) {
+
+          if (
+            selectedUids.includes(
+              candidate.uid
+            )
+          ) {
+            continue;
+          }
+
+          if (
+            candidate.total_demand >
+              cutoff.total_demand &&
+            (
+              !bestCandidate ||
+              candidate.total_demand >
+                bestCandidate.total_demand
+            )
+          ) {
+
+            bestCandidate =
+              candidate;
+
+          }
+
+        }
+
+        if (!bestCandidate) {
+          break;
+        }
+
+        selectedUids[2] =
+          bestCandidate.uid;
+
+        selectedUids.sort(
+          (uidA, uidB) => {
+
+            const a =
+              entriesByUid.get(
+                uidA
+              );
+
+            const b =
+              entriesByUid.get(
+                uidB
+              );
+
+            if (
+              !a ||
+              !b
+            ) {
+              return 0;
+            }
+
+            return (
+              b.total_demand -
+              a.total_demand
+            );
+
+          }
+        );
+
+      }
+
+    }
+
+    const result = {};
+
+    for (
+      let i = 0;
+      i <
+        selectedUids.length &&
+      i < 3;
+      i++
+    ) {
+
+      const uid =
+        selectedUids[i];
+
+      const item =
+        entriesByUid.get(uid);
+
+      if (!item) {
+        continue;
+      }
+
+      const oldItem =
+        previous[
+          String(i + 1)
+        ];
+
+      let profile;
+
+      if (
+        oldItem &&
+        String(oldItem.uid) === uid &&
+        oldItem.name !== undefined &&
+        oldItem.photo_url !== undefined
+      ) {
+
+        profile = {
+
+          name:
+            String(
+              oldItem.name || ""
+            ).trim() || "User",
+
+          photo_url:
+            String(
+              oldItem.photo_url || ""
+            ).trim()
+
+        };
+
+      } else {
+
+        profile =
+          await getUserProfile(
+            uid
+          );
+
+      }
+
+      result[
+        String(i + 1)
+      ] = {
+
+        rank:
+          i + 1,
+
+        uid:
+          item.uid,
+
+        name:
+          profile.name ||
+          "User",
+
+        photo_url:
+          profile.photo_url ||
+          "",
+
+        total_demand:
+          item.total_demand,
+
+        seatA:
+          item.seatA,
+
+        seatB:
+          item.seatB,
+
+        seatC:
+          item.seatC
+
+      };
+
+    }
+
+    await top3Ref.set({
+
+      1:
+        result["1"] ||
+        null,
+
+      2:
+        result["2"] ||
+        null,
+
+      3:
+        result["3"] ||
+        null,
+
+      round_id:
+        String(roundId),
+
+      updated_at:
+        Date.now()
+
+    });
+
+    console.log(
+      "GLOBAL TOP 3 UPDATED",
+      result
+    );
+
+    return result;
+
+  } catch (e) {
+
+    console.error(
+      "TOP 3 UPDATE ERROR",
+      e
+    );
+
+    return null;
+
+  }
+
 }
 
 /* =========================================================
@@ -1531,208 +1806,231 @@ REQUEST HELPERS
 ========================================================= */
 
 async function setRequestStatus(
-requestId,
-status,
-extra = {}
+  requestId,
+  status,
+  extra = {}
 ) {
 
-await betRequestsRef
-.child(requestId)
-.update({
+  await betRequestsRef
+    .child(requestId)
+    .update({
 
-status,  
+      status,
 
-  processed_at:  
-    Date.now(),  
+      processed_at:
+        Date.now(),
 
-  ...extra  
-});
+      ...extra
+
+    });
 
 }
 
 async function verifyRequestUser(
-request
+  request
 ) {
 
-const idToken =
-String(
-request.idToken || ""
-).trim();
+  const idToken =
+    String(
+      request.idToken || ""
+    ).trim();
 
-const requestUid =
-String(
-request.uid || ""
-).trim();
+  const requestUid =
+    String(
+      request.uid || ""
+    ).trim();
 
-if (!idToken) {
-throw new Error(
-"Missing Firebase ID token"
-);
+  if (!idToken) {
+
+    throw new Error(
+      "Missing Firebase ID token"
+    );
+
+  }
+
+  if (!requestUid) {
+
+    throw new Error(
+      "Missing UID"
+    );
+
+  }
+
+  const decoded =
+    await admin
+      .auth()
+      .verifyIdToken(
+        idToken
+      );
+
+  if (
+    !decoded ||
+    decoded.uid !== requestUid
+  ) {
+
+    throw new Error(
+      "UID verification failed"
+    );
+
+  }
+
+  return decoded.uid;
+
 }
 
-if (!requestUid) {
-throw new Error(
-"Missing UID"
-);
-}
-
-const decoded =
-await admin
-.auth()
-.verifyIdToken(
-idToken
-);
-
-if (
-!decoded ||
-decoded.uid !== requestUid
+function normalizeSeat(
+  value
 ) {
 
-throw new Error(  
-  "UID verification failed"  
-);
+  let seat =
+    String(
+      value || ""
+    )
+      .trim()
+      .toUpperCase();
 
-}
+  if (
+    seat === "SEATA"
+  ) {
+    seat = "A";
+  }
 
-return decoded.uid;
-}
+  if (
+    seat === "SEATB"
+  ) {
+    seat = "B";
+  }
 
-function normalizeSeat(value) {
+  if (
+    seat === "SEATC"
+  ) {
+    seat = "C";
+  }
 
-let seat =
-String(
-value || ""
-)
-.trim()
-.toUpperCase();
+  return seat;
 
-if (
-seat === "SEATA"
-) {
-seat = "A";
-}
-
-if (
-seat === "SEATB"
-) {
-seat = "B";
-}
-
-if (
-seat === "SEATC"
-) {
-seat = "C";
-}
-
-return seat;
 }
 
 /* =========================================================
-ROLLBACK
+ROLLBACK USER
 ========================================================= */
 
 async function rollbackUser(
-uid,
-requestId,
-amount
+  uid,
+  requestId,
+  amount
 ) {
 
-const ref =
-db.ref(users/${uid});
+  const ref =
+    db.ref(`users/${uid}`);
 
-try {
+  try {
 
-const result =  
-  await ref.transaction(  
-    (user) => {  
+    const result =
+      await ref.transaction(
+        (user) => {
 
-      if (!user) {  
-        return user;  
-      }  
+          if (!user) {
+            return user;
+          }
 
-      if (  
-        !user.processedSelectionRequests ||  
-        !user.processedSelectionRequests[  
-          requestId  
-        ]  
-      ) {  
+          if (
+            !user.processedSelectionRequests ||
+            !user
+              .processedSelectionRequests[
+                requestId
+              ]
+          ) {
 
-        return user;  
-      }  
+            return user;
 
-      user.diamonds =  
-        Number(  
-          user.diamonds || 0  
-        ) + amount;  
+          }
 
-      delete user  
-        .processedSelectionRequests[  
-          requestId  
-        ];  
+          user.diamonds =
+            Number(
+              user.diamonds || 0
+            ) + amount;
 
-      return user;  
-    }  
-  );  
+          delete user
+            .processedSelectionRequests[
+              requestId
+            ];
 
-return result.committed;
+          return user;
 
-} catch (e) {
+        }
+      );
 
-console.error(  
-  "ROLLBACK USER ERROR",  
-  e  
-);  
+    return result.committed;
 
-return false;
+  } catch (e) {
+
+    console.error(
+      "ROLLBACK USER ERROR",
+      e
+    );
+
+    return false;
+
+  }
 
 }
-}
+
+/* =========================================================
+ROLLBACK POT
+========================================================= */
 
 async function rollbackPot(
-roundId,
-seat,
-amount
+  roundId,
+  seat,
+  amount
 ) {
 
-const ref =
-roundRef
-.child("pot")
-.child(seat);
+  const ref =
+    roundRef
+      .child("pot")
+      .child(seat);
 
-try {
+  try {
 
-const result =  
-  await ref.transaction(  
-    (value) => {  
+    const result =
+      await ref.transaction(
+        (value) => {
 
-      const current =  
-        Number(value || 0);  
+          const current =
+            Number(
+              value || 0
+            );
 
-      if (  
-        !Number.isSafeInteger(  
-          current  
-        ) ||  
-        current < amount  
-      ) {  
-        return;  
-      }  
+          if (
+            !Number.isSafeInteger(
+              current
+            ) ||
+            current < amount
+          ) {
 
-      return current - amount;  
-    }  
-  );  
+            return;
 
-return result.committed;
+          }
 
-} catch (e) {
+          return current - amount;
 
-console.error(  
-  "ROLLBACK POT ERROR",  
-  e  
-);  
+        }
+      );
 
-return false;
+    return result.committed;
 
-}
+  } catch (e) {
+
+    console.error(
+      "ROLLBACK POT ERROR",
+      e
+    );
+
+    return false;
+
+  }
+
 }
 
 /* =========================================================
@@ -1740,68 +2038,73 @@ CURRENT ROUND DEMAND
 ========================================================= */
 
 async function updateCurrentRoundDemand(
-roundId,
-uid,
-seat,
-amount
+  roundId,
+  uid,
+  seat,
+  amount
 ) {
 
-const ref =
-roundUsersRef
-.child(roundId)
-.child(uid);
+  const ref =
+    roundUsersRef
+      .child(roundId)
+      .child(uid);
 
-const key =
-seat${seat};
+  const key =
+    `seat${seat}`;
 
-try {
+  try {
 
-const result =  
-  await ref.transaction(  
-    (current) => {  
+    const result =
+      await ref.transaction(
+        (current) => {
 
-      current =  
-        current &&  
-        typeof current === "object"  
-          ? current  
-          : {};  
+          current =
+            current &&
+            typeof current ===
+              "object"
+              ? current
+              : {};
 
-      const oldValue =  
-        Number(  
-          current[key] || 0  
-        );  
+          const oldValue =
+            Number(
+              current[key] || 0
+            );
 
-      if (  
-        !Number.isSafeInteger(  
-          oldValue  
-        ) ||  
-        oldValue < 0  
-      ) {  
-        return;  
-      }  
+          if (
+            !Number.isSafeInteger(
+              oldValue
+            ) ||
+            oldValue < 0
+          ) {
 
-      current[key] =  
-        oldValue + amount;  
+            return;
 
-      current.last_update_at =  
-        Date.now();  
+          }
 
-      return current;  
-    }  
-  );  
+          current[key] =
+            oldValue + amount;
 
-return result.committed;
+          current.last_update_at =
+            Date.now();
 
-} catch (e) {
+          return current;
 
-console.error(  
-  "ROUND DEMAND UPDATE ERROR",  
-  e  
-);  
+        }
+      );
 
-return false;
+    return result.committed;
 
-}
+  } catch (e) {
+
+    console.error(
+      "ROUND DEMAND UPDATE ERROR",
+      e
+    );
+
+    return false;
+
+  }
+
 }
 
 /* =========================================================
@@ -1809,461 +2112,508 @@ PROCESS BET
 ========================================================= */
 
 async function processSelectionRequest(
-requestId,
-request
+  requestId,
+  request
 ) {
 
-if (!request) return;
+  if (!request) {
+    return;
+  }
 
-if (
-[
-"accepted",
-"rejected",
-"processing",
-"manual_review"
-].includes(
-String(
-request.status || ""
-).toLowerCase()
-)
-) {
-return;
-}
+  if (
+    [
+      "accepted",
+      "rejected",
+      "processing",
+      "manual_review"
+    ].includes(
+      String(
+        request.status || ""
+      ).toLowerCase()
+    )
+  ) {
 
-const requestRef =
-betRequestsRef
-.child(requestId);
+    return;
 
-let claimed = false;
+  }
 
-const claim =
-await requestRef.transaction(
-(current) => {
+  const requestRef =
+    betRequestsRef
+      .child(requestId);
 
-if (!current) {  
-      return;  
-    }  
+  let claimed = false;
 
-    if (  
-      [  
-        "accepted",  
-        "rejected",  
-        "processing",  
-        "manual_review"  
-      ].includes(  
-        String(  
-          current.status || ""  
-        ).toLowerCase()  
-      )  
-    ) {  
-      return;  
-    }  
+  const claim =
+    await requestRef.transaction(
+      (current) => {
 
-    current.status =  
-      "processing";  
+        if (!current) {
+          return;
+        }
 
-    current.processing_at =  
-      Date.now();  
+        if (
+          [
+            "accepted",
+            "rejected",
+            "processing",
+            "manual_review"
+          ].includes(
+            String(
+              current.status || ""
+            ).toLowerCase()
+          )
+        ) {
 
-    claimed = true;  
+          return;
 
-    return current;  
-  }  
-);
+        }
 
-if (
-!claim.committed ||
-!claimed
-) {
-return;
-}
+        current.status =
+          "processing";
 
-let uid;
+        current.processing_at =
+          Date.now();
 
-try {
+        claimed = true;
 
-uid =  
-  await verifyRequestUser(  
-    request  
+        return current;
+
+      }
+    );
+
+  if (
+    !claim.committed ||
+    !claimed
+  ) {
+
+    return;
+
+  }
+
+  let uid;
+
+  try {
+
+    uid =
+      await verifyRequestUser(
+        request
+      );
+
+  } catch (e) {
+
+    await setRequestStatus(
+      requestId,
+      "rejected",
+      {
+        reason:
+          e.message
+      }
+    );
+
+    return;
+
+  }
+
+  try {
+
+    await requestRef
+      .child("idToken")
+      .remove();
+
+  } catch (_) {}
+
+  const roundId =
+    String(
+      request.round_id || ""
+    ).trim();
+
+  const seat =
+    normalizeSeat(
+      request.seat
+    );
+
+  const amount =
+    Number(
+      request.amount
+    );
+
+  if (!roundId) {
+
+    return setRequestStatus(
+      requestId,
+      "rejected",
+      {
+        reason:
+          "Missing round_id"
+      }
+    );
+
+  }
+
+  if (
+    !ALLOWED_SEATS.includes(
+      seat
+    )
+  ) {
+
+    return setRequestStatus(
+      requestId,
+      "rejected",
+      {
+        reason:
+          "Invalid seat"
+      }
+    );
+
+  }
+
+  if (
+    !Number.isSafeInteger(
+      amount
+    ) ||
+    !ALLOWED_AMOUNTS.includes(
+      amount
+    )
+  ) {
+
+    return setRequestStatus(
+      requestId,
+      "rejected",
+      {
+        reason:
+          "Invalid chip amount"
+      }
+    );
+
+  }
+
+  const roundSnap =
+    await roundRef.once(
+      "value"
+    );
+
+  const round =
+    roundSnap.val();
+
+  if (!round) {
+
+    return setRequestStatus(
+      requestId,
+      "rejected",
+      {
+        reason:
+          "No active global round"
+      }
+    );
+
+  }
+
+  if (
+    String(
+      round.round_id || ""
+    ) !== roundId
+  ) {
+
+    return setRequestStatus(
+      requestId,
+      "rejected",
+      {
+        reason:
+          "Round expired"
+      }
+    );
+
+  }
+
+  if (
+    String(
+      round.status || ""
+    ).toLowerCase() !==
+    "waiting"
+  ) {
+
+    return setRequestStatus(
+      requestId,
+      "rejected",
+      {
+        reason:
+          "Selection closed"
+      }
+    );
+
+  }
+
+  if (
+    Number(
+      round.reveal_at || 0
+    ) <= Date.now()
+  ) {
+
+    return setRequestStatus(
+      requestId,
+      "rejected",
+      {
+        reason:
+          "Selection time expired"
+      }
+    );
+
+  }
+
+  /* =======================================================
+     USER BALANCE
+  ======================================================= */
+
+  const userRef =
+    db.ref(`users/${uid}`);
+
+  let userTransaction;
+
+  try {
+
+    userTransaction =
+      await userRef.transaction(
+        (user) => {
+
+          if (!user) {
+            return user;
+          }
+
+          if (
+            user.processedSelectionRequests &&
+            user
+              .processedSelectionRequests[
+                requestId
+              ]
+          ) {
+
+            return user;
+
+          }
+
+          const diamonds =
+            Number(
+              user.diamonds || 0
+            );
+
+          if (
+            !Number.isSafeInteger(
+              diamonds
+            ) ||
+            diamonds < amount
+          ) {
+
+            return;
+
+          }
+
+          user.diamonds =
+            diamonds - amount;
+
+          user.processedSelectionRequests =
+            user.processedSelectionRequests ||
+            {};
+
+          user
+            .processedSelectionRequests[
+              requestId
+            ] = true;
+
+          return user;
+
+        }
+      );
+
+  } catch (e) {
+
+    console.error(
+      "USER TRANSACTION ERROR",
+      e
+    );
+
+    return setRequestStatus(
+      requestId,
+      "rejected",
+      {
+        reason:
+          "User transaction error"
+      }
+    );
+
+  }
+
+  if (
+    !userTransaction.committed
+  ) {
+
+    return setRequestStatus(
+      requestId,
+      "rejected",
+      {
+        reason:
+          "Insufficient diamonds"
+      }
+    );
+
+  }
+
+  /* =======================================================
+     ACTUAL POT
+  ======================================================= */
+
+  const actualPotRef =
+    roundRef
+      .child("pot")
+      .child(seat);
+
+  let potUpdated = false;
+
+  try {
+
+    const potTx =
+      await actualPotRef.transaction(
+        (value) => {
+
+          const current =
+            Number(
+              value || 0
+            );
+
+          if (
+            !Number.isSafeInteger(
+              current
+            ) ||
+            current < 0
+          ) {
+
+            return;
+
+          }
+
+          return current + amount;
+
+        }
+      );
+
+    potUpdated =
+      potTx.committed;
+
+  } catch (e) {
+
+    console.error(
+      "POT UPDATE ERROR",
+      e
+    );
+
+  }
+
+  if (!potUpdated) {
+
+    const rollback =
+      await rollbackUser(
+        uid,
+        requestId,
+        amount
+      );
+
+    return setRequestStatus(
+      requestId,
+      rollback
+        ? "rejected"
+        : "manual_review",
+      {
+
+        reason:
+          rollback
+            ? "Pot update failed; balance rolled back"
+            : "Pot update failed and rollback failed"
+
+      }
+    );
+
+  }
+
+  /* =======================================================
+     DEMAND
+  ======================================================= */
+
+  const demandUpdated =
+    await updateCurrentRoundDemand(
+      roundId,
+      uid,
+      seat,
+      amount
+    );
+
+  if (!demandUpdated) {
+
+    const potRollback =
+      await rollbackPot(
+        roundId,
+        seat,
+        amount
+      );
+
+    const userRollback =
+      await rollbackUser(
+        uid,
+        requestId,
+        amount
+      );
+
+    return setRequestStatus(
+      requestId,
+      potRollback &&
+      userRollback
+        ? "rejected"
+        : "manual_review",
+      {
+
+        reason:
+          "Round demand update failed"
+
+      }
+    );
+
+  }
+
+  await updateTop3Demand(
+    roundId
   );
 
-} catch (e) {
+  await setRequestStatus(
+    requestId,
+    "accepted",
+    {
 
-await setRequestStatus(  
-  requestId,  
-  "rejected",  
-  {  
-    reason: e.message  
-  }  
-);  
+      processed_uid:
+        uid,
 
-return;
+      processed_round_id:
+        roundId,
 
-}
+      processed_seat:
+        seat,
 
-try {
+      processed_amount:
+        amount
 
-await requestRef  
-  .child("idToken")  
-  .remove();
-
-} catch (_) {}
-
-const roundId =
-String(
-request.round_id || ""
-).trim();
-
-const seat =
-normalizeSeat(
-request.seat
-);
-
-const amount =
-Number(
-request.amount
-);
-
-if (!roundId) {
-
-return setRequestStatus(  
-  requestId,  
-  "rejected",  
-  {  
-    reason:  
-      "Missing round_id"  
-  }  
-);
-
-}
-
-if (
-!ALLOWED_SEATS.includes(
-seat
-)
-) {
-
-return setRequestStatus(  
-  requestId,  
-  "rejected",  
-  {  
-    reason:  
-      "Invalid seat"  
-  }  
-);
-
-}
-
-if (
-!Number.isSafeInteger(
-amount
-) ||
-!ALLOWED_AMOUNTS.includes(
-amount
-)
-) {
-
-return setRequestStatus(  
-  requestId,  
-  "rejected",  
-  {  
-    reason:  
-      "Invalid chip amount"  
-  }  
-);
-
-}
-
-const roundSnap =
-await roundRef.once(
-"value"
-);
-
-const round =
-roundSnap.val();
-
-if (!round) {
-
-return setRequestStatus(  
-  requestId,  
-  "rejected",  
-  {  
-    reason:  
-      "No active global round"  
-  }  
-);
-
-}
-
-if (
-String(
-round.round_id || ""
-) !== roundId
-) {
-
-return setRequestStatus(  
-  requestId,  
-  "rejected",  
-  {  
-    reason:  
-      "Round expired"  
-  }  
-);
-
-}
-
-if (
-String(
-round.status || ""
-).toLowerCase() !==
-"waiting"
-) {
-
-return setRequestStatus(  
-  requestId,  
-  "rejected",  
-  {  
-    reason:  
-      "Selection closed"  
-  }  
-);
-
-}
-
-if (
-Number(
-round.reveal_at || 0
-) <= Date.now()
-) {
-
-return setRequestStatus(  
-  requestId,  
-  "rejected",  
-  {  
-    reason:  
-      "Selection time expired"  
-  }  
-);
-
-}
-
-const userRef =
-db.ref(users/${uid});
-
-let userTransaction;
-
-try {
-
-userTransaction =  
-  await userRef.transaction(  
-    (user) => {  
-
-      if (!user) {  
-        return user;  
-      }  
-
-      if (  
-        user.processedSelectionRequests &&  
-        user.processedSelectionRequests[  
-          requestId  
-        ]  
-      ) {  
-        return user;  
-      }  
-
-      const diamonds =  
-        Number(  
-          user.diamonds || 0  
-        );  
-
-      if (  
-        !Number.isSafeInteger(  
-          diamonds  
-        ) ||  
-        diamonds < amount  
-      ) {  
-        return;  
-      }  
-
-      user.diamonds =  
-        diamonds - amount;  
-
-      user.processedSelectionRequests =  
-        user.processedSelectionRequests ||  
-        {};  
-
-      user.processedSelectionRequests[  
-        requestId  
-      ] = true;  
-
-      return user;  
-    }  
+    }
   );
 
-} catch (e) {
+  console.log(
+    "GLOBAL BET ACCEPTED",
+    {
 
-console.error(  
-  "USER TRANSACTION ERROR",  
-  e  
-);  
+      requestId,
+      uid,
+      roundId,
+      seat,
+      amount
 
-return setRequestStatus(  
-  requestId,  
-  "rejected",  
-  {  
-    reason:  
-      "User transaction error"  
-  }  
-);
+    }
+  );
 
-}
-
-if (
-!userTransaction.committed
-) {
-
-return setRequestStatus(  
-  requestId,  
-  "rejected",  
-  {  
-    reason:  
-      "Insufficient diamonds"  
-  }  
-);
-
-}
-
-const actualPotRef =
-roundRef
-.child("pot")
-.child(seat);
-
-let potUpdated = false;
-
-try {
-
-const potTx =  
-  await actualPotRef.transaction(  
-    (value) => {  
-
-      const current =  
-        Number(value || 0);  
-
-      if (  
-        !Number.isSafeInteger(  
-          current  
-        ) ||  
-        current < 0  
-      ) {  
-        return;  
-      }  
-
-      return current + amount;  
-    }  
-  );  
-
-potUpdated =  
-  potTx.committed;
-
-} catch (e) {
-
-console.error(  
-  "POT UPDATE ERROR",  
-  e  
-);
-
-}
-
-if (!potUpdated) {
-
-const rollback =  
-  await rollbackUser(  
-    uid,  
-    requestId,  
-    amount  
-  );  
-
-return setRequestStatus(  
-  requestId,  
-  rollback  
-    ? "rejected"  
-    : "manual_review",  
-  {  
-    reason:  
-      rollback  
-        ? "Pot update failed; balance rolled back"  
-        : "Pot update failed and rollback failed"  
-  }  
-);
-
-}
-
-const demandUpdated =
-await updateCurrentRoundDemand(
-roundId,
-uid,
-seat,
-amount
-);
-
-if (!demandUpdated) {
-
-const potRollback =  
-  await rollbackPot(  
-    roundId,  
-    seat,  
-    amount  
-  );  
-
-const userRollback =  
-  await rollbackUser(  
-    uid,  
-    requestId,  
-    amount  
-  );  
-
-return setRequestStatus(  
-  requestId,  
-  potRollback &&  
-  userRollback  
-    ? "rejected"  
-    : "manual_review",  
-  {  
-    reason:  
-      "Round demand update failed"  
-  }  
-);
-
-}
-
-await updateTop3Demand(
-roundId
-);
-
-await setRequestStatus(
-requestId,
-"accepted",
-{
-processed_uid: uid,
-processed_round_id:
-roundId,
-processed_seat:
-seat,
-processed_amount:
-amount
-}
-);
-
-console.log(
-"GLOBAL BET ACCEPTED",
-{
-requestId,
-uid,
-roundId,
-seat,
-amount
-}
-);
 }
 
 /* =========================================================
@@ -2271,462 +2621,512 @@ BET REQUEST LISTENER
 ========================================================= */
 
 betRequestsRef.on(
-"child_added",
-async (snapshot) => {
+  "child_added",
+  async (snapshot) => {
 
-const requestId =  
-  snapshot.key;  
+    const requestId =
+      snapshot.key;
 
-const request =  
-  snapshot.val();  
+    const request =
+      snapshot.val();
 
-if (!requestId) return;  
+    if (!requestId) {
+      return;
+    }
 
-try {  
+    try {
 
-  await processSelectionRequest(  
-    requestId,  
-    request  
-  );  
+      await processSelectionRequest(
+        requestId,
+        request
+      );
 
-} catch (e) {  
+    } catch (e) {
 
-  console.error(  
-    "REQUEST PROCESS ERROR",  
-    e  
-  );  
+      console.error(
+        "REQUEST PROCESS ERROR",
+        e
+      );
 
-  try {  
+      try {
 
-    await setRequestStatus(  
-      requestId,  
-      "rejected",  
-      {  
-        reason:  
-          "Internal request processing error"  
-      }  
-    );  
+        await setRequestStatus(
+          requestId,
+          "rejected",
+          {
 
-  } catch (_) {}  
-}
+            reason:
+              "Internal request processing error"
 
-}
-);
+          }
+        );
 
-/* =========================================================
-CREATE GLOBAL ROUND
-========================================================= */
+      } catch (_) {}
 
-async function createNewRound(
-reason
-) {
+    }
 
-if (
-roundOperationRunning
-) {
-return null;
-}
-
-roundOperationRunning = true;
-
-try {
-
-stopPotDisplay();  
-
-const currentSnap =  
-  await roundRef.once(  
-    "value"  
-  );  
-
-const current =  
-  currentSnap.val() || {};  
-
-const oldId =  
-  String(  
-    current.round_id || "0"  
-  );  
-
-const oldNumber =  
-  Number.isFinite(  
-    Number(oldId)  
-  )  
-    ? Number(oldId)  
-    : 0;  
-
-const newRoundId =  
-  String(  
-    oldNumber + 1  
-  );  
-
-const cards =  
-  generateNineCards();  
-
-const results =  
-  calculateRoundResults(  
-    cards  
-  );  
-
-const now =  
-  Date.now();  
-
-const revealAt =  
-  now + WAITING_TIME;  
-
-const roundData = {  
-
-  round_id:  
-    newRoundId,  
-
-  status:  
-    "waiting",  
-
-  started_at:  
-    now,  
-
-  reveal_at:  
-    revealAt,  
-
-  pot: {  
-    A: 0,  
-    B: 0,  
-    C: 0  
-  },  
-
-  cards:  
-    null,  
-
-  results:  
-    null,  
-
-  winner:  
-    null  
-};  
-
-await roundRef.set(  
-  roundData  
-);  
-
-await serverRoundRef.set({  
-
-  round_id:  
-    newRoundId,  
-
-  cards,  
-
-  results,  
-
-  created_at:  
-    now  
-});  
-
-await potDisplayRef.set({  
-
-  A:  
-    randomPotNumber(),  
-
-  B:  
-    randomPotNumber(),  
-
-  C:  
-    randomPotNumber(),  
-
-  round_id:  
-    newRoundId,  
-
-  updated_at:  
-    now  
-});  
-
-await top3Ref.set({  
-
-  1: null,  
-  2: null,  
-  3: null,  
-
-  round_id:  
-    newRoundId,  
-
-  updated_at:  
-    now  
-});  
-
-await roundUsersRef  
-  .child(newRoundId)  
-  .set(null);  
-
-console.log(  
-  "GLOBAL NEW ROUND",  
-  {  
-    round_id:  
-      newRoundId,  
-
-    reason,  
-
-    reveal_at:  
-      revealAt,  
-
-    winner_generated_server_side:  
-      results.winner  
-  }  
-);  
-
-startPotDisplay(  
-  newRoundId  
-);  
-
-scheduleReveal(  
-  newRoundId,  
-  revealAt  
-);  
-
-return roundData;
-
-} catch (e) {
-
-console.error(  
-  "CREATE GLOBAL ROUND ERROR",  
-  e  
-);  
-
-return null;
-
-} finally {
-
-roundOperationRunning =  
-  false;
-
-}
-}
-
-/* =========================================================
-REVEAL
-========================================================= */
-
-async function revealRound(
-roundId
-) {
-
-try {
-
-const snap =  
-  await roundRef.once(  
-    "value"  
-  );  
-
-const round =  
-  snap.val();  
-
-if (  
-  !round ||  
-  String(  
-    round.round_id  
-  ) !== String(roundId) ||  
-  round.status !== "waiting"  
-) {  
-  return false;  
-}  
-
-stopPotDisplay();  
-
-const privateSnap =  
-  await serverRoundRef.once(  
-    "value"  
-  );  
-
-const privateRound =  
-  privateSnap.val();  
-
-if (  
-  !privateRound ||  
-  String(  
-    privateRound.round_id  
-  ) !== String(roundId)  
-) {  
-  return false;  
-}  
-
-const revealedAt =  
-  Date.now();  
-
-await roundRef.update({  
-
-  status:  
-    "reveal",  
-
-  revealed_at:  
-    revealedAt,  
-
-  cards:  
-    privateRound.cards,  
-
-  results:  
-    privateRound.results,  
-
-  winner:  
-    privateRound  
-      .results  
-      .winner  
-});  
-
-
-
-/* =========================================================
-   SAVE ROUND RECORD
-   ========================================================= */
-
-const winner =
-  String(
-    privateRound.results.winner || ""
-  ).trim().toUpperCase();
-
-await recordsRef
-  .child(String(roundId))
-  .set({
-
-    round_id:
-      String(roundId),
-
-    winner:
-      winner,
-
-    recorded_at:
-      revealedAt
-  });
-
-console.log(
-  "ROUND RECORD SAVED",
-  {
-    round_id: String(roundId),
-    winner: winner
   }
 );
 
+/* =========================================================
+CREATE NEW ROUND
+========================================================= */
 
+async function createNewRound(
+  reason
+) {
 
-await potDisplayRef.update({  
+  if (
+    roundOperationRunning
+  ) {
 
-  round_id:  
-    String(roundId),  
+    return null;
 
-  updated_at:  
-    revealedAt  
-});  
+  }
 
-scheduleNextRoundAfterReveal(  
-  roundId,  
-  revealedAt  
-);  
+  roundOperationRunning =
+    true;
 
-console.log(  
-  "GLOBAL ROUND REVEALED",  
-  {  
-    round_id:  
-      roundId,  
+  try {
 
-    winner:  
-      privateRound  
-        .results  
-        .winner  
-  }  
-);  
+    stopPotDisplay();
 
-return true;
+    const currentSnap =
+      await roundRef.once(
+        "value"
+      );
 
-} catch (e) {
+    const current =
+      currentSnap.val() || {};
 
-console.error(  
-  "REVEAL ERROR",  
-  e  
-);  
+    const oldId =
+      String(
+        current.round_id || "0"
+      );
 
-return false;
+    const oldNumber =
+      Number.isFinite(
+        Number(oldId)
+      )
+        ? Number(oldId)
+        : 0;
+
+    const newRoundId =
+      String(
+        oldNumber + 1
+      );
+
+    const cards =
+      generateNineCards();
+
+    const results =
+      calculateRoundResults(
+        cards
+      );
+
+    const now =
+      Date.now();
+
+    const revealAt =
+      now + WAITING_TIME;
+
+    const roundData = {
+
+      round_id:
+        newRoundId,
+
+      status:
+        "waiting",
+
+      started_at:
+        now,
+
+      reveal_at:
+        revealAt,
+
+      pot: {
+
+        A: 0,
+        B: 0,
+        C: 0
+
+      },
+
+      cards:
+        null,
+
+      results:
+        null,
+
+      winner:
+        null
+
+    };
+
+    await roundRef.set(
+      roundData
+    );
+
+    await serverRoundRef.set({
+
+      round_id:
+        newRoundId,
+
+      cards,
+
+      results,
+
+      created_at:
+        now
+
+    });
+
+    await potDisplayRef.set({
+
+      A:
+        randomPotNumber(),
+
+      B:
+        randomPotNumber(),
+
+      C:
+        randomPotNumber(),
+
+      round_id:
+        newRoundId,
+
+      updated_at:
+        now
+
+    });
+
+    await top3Ref.set({
+
+      1: null,
+      2: null,
+      3: null,
+
+      round_id:
+        newRoundId,
+
+      updated_at:
+        now
+
+    });
+
+    await roundUsersRef
+      .child(newRoundId)
+      .set(null);
+
+    console.log(
+      "GLOBAL NEW ROUND",
+      {
+
+        round_id:
+          newRoundId,
+
+        reason,
+
+        reveal_at:
+          revealAt,
+
+        winner_generated_server_side:
+          results.winner
+
+      }
+    );
+
+    startPotDisplay(
+      newRoundId
+    );
+
+    scheduleReveal(
+      newRoundId,
+      revealAt
+    );
+
+    return roundData;
+
+  } catch (e) {
+
+    console.error(
+      "CREATE GLOBAL ROUND ERROR",
+      e
+    );
+
+    return null;
+
+  } finally {
+
+    roundOperationRunning =
+      false;
+
+  }
 
 }
+
+/* =========================================================
+REVEAL ROUND
+========================================================= */
+
+async function revealRound(
+  roundId
+) {
+
+  try {
+
+    const snap =
+      await roundRef.once(
+        "value"
+      );
+
+    const round =
+      snap.val();
+
+    if (
+      !round ||
+      String(
+        round.round_id
+      ) !== String(roundId) ||
+      round.status !==
+        "waiting"
+    ) {
+
+      return false;
+
+    }
+
+    stopPotDisplay();
+
+    const privateSnap =
+      await serverRoundRef.once(
+        "value"
+      );
+
+    const privateRound =
+      privateSnap.val();
+
+    if (
+      !privateRound ||
+      String(
+        privateRound.round_id
+      ) !== String(roundId)
+    ) {
+
+      return false;
+
+    }
+
+    const revealedAt =
+      Date.now();
+
+    const winner =
+      String(
+        privateRound.results &&
+        privateRound.results.winner
+          ? privateRound.results.winner
+          : ""
+      )
+        .trim()
+        .toUpperCase();
+
+    /* =====================================================
+       REVEAL CURRENT ROUND
+    ===================================================== */
+
+    await roundRef.update({
+
+      status:
+        "reveal",
+
+      revealed_at:
+        revealedAt,
+
+      cards:
+        privateRound.cards,
+
+      results:
+        privateRound.results,
+
+      winner:
+        winner
+
+    });
+
+    /* =====================================================
+       SAVE HISTORY RECORD
+    ===================================================== */
+
+    await recordsRef
+      .child(
+        String(roundId)
+      )
+      .set({
+
+        round_id:
+          String(roundId),
+
+        winner:
+          winner,
+
+        recorded_at:
+          revealedAt
+
+      });
+
+    console.log(
+      "ROUND RECORD SAVED",
+      {
+
+        round_id:
+          String(roundId),
+
+        winner:
+          winner
+
+      }
+    );
+
+    await potDisplayRef.update({
+
+      round_id:
+        String(roundId),
+
+      updated_at:
+        revealedAt
+
+    });
+
+    scheduleNextRoundAfterReveal(
+      roundId,
+      revealedAt
+    );
+
+    console.log(
+      "GLOBAL ROUND REVEALED",
+      {
+
+        round_id:
+          roundId,
+
+        winner:
+          winner
+
+      }
+    );
+
+    return true;
+
+  } catch (e) {
+
+    console.error(
+      "REVEAL ERROR",
+      e
+    );
+
+    return false;
+
+  }
+
 }
+
+/* =========================================================
+SCHEDULE REVEAL
+========================================================= */
 
 function scheduleReveal(
-roundId,
-revealAt
+  roundId,
+  revealAt
 ) {
 
-const delay =
-Math.max(
-0,
-Number(revealAt) -
-Date.now()
-);
+  const delay =
+    Math.max(
+      0,
+      Number(revealAt) -
+      Date.now()
+    );
 
-setTimeout(
-() => {
+  setTimeout(
+    () => {
 
-revealRound(  
-    roundId  
-  ).catch((e) => {  
+      revealRound(
+        roundId
+      ).catch((e) => {
 
-    console.error(  
-      "SCHEDULE REVEAL ERROR",  
-      e  
-    );  
-  });  
+        console.error(
+          "SCHEDULE REVEAL ERROR",
+          e
+        );
 
-},  
-delay
+      });
 
-);
+    },
+    delay
+  );
+
 }
 
+/* =========================================================
+NEXT ROUND
+========================================================= */
+
 function scheduleNextRoundAfterReveal(
-roundId,
-revealedAt
+  roundId,
+  revealedAt
 ) {
 
-const delay =
-Math.max(
-0,
-Number(revealedAt) +
-REVEAL_TIME -
-Date.now()
-);
+  const delay =
+    Math.max(
+      0,
+      Number(revealedAt) +
+      REVEAL_TIME -
+      Date.now()
+    );
 
-setTimeout(
-async () => {
+  setTimeout(
+    async () => {
 
-try {  
+      try {
 
-    const snap =  
-      await roundRef.once(  
-        "value"  
-      );  
+        const snap =
+          await roundRef.once(
+            "value"
+          );
 
-    const round =  
-      snap.val();  
+        const round =
+          snap.val();
 
-    if (  
-      !round ||  
-      String(  
-        round.round_id  
-      ) !== String(roundId) ||  
-      round.status !== "reveal"  
-    ) {  
-      return;  
-    }  
+        if (
+          !round ||
+          String(
+            round.round_id
+          ) !==
+            String(roundId) ||
+          round.status !==
+            "reveal"
+        ) {
 
-    await createNewRound(  
-      "normal global cycle"  
-    );  
+          return;
 
-  } catch (e) {  
+        }
 
-    console.error(  
-      "NEXT GLOBAL ROUND ERROR",  
-      e  
-    );  
-  }  
+        await createNewRound(
+          "normal global cycle"
+        );
 
-},  
-delay
+      } catch (e) {
 
-);
+        console.error(
+          "NEXT GLOBAL ROUND ERROR",
+          e
+        );
+
+      }
+
+    },
+    delay
+  );
+
 }
 
 /* =========================================================
@@ -2735,322 +3135,345 @@ RECONCILER
 
 async function reconcileRound() {
 
-if (
-reconcileRunning
-) {
-return;
-}
+  if (
+    reconcileRunning
+  ) {
 
-reconcileRunning =
-true;
+    return;
 
-try {
+  }
 
-const snap =  
-  await roundRef.once(  
-    "value"  
-  );  
+  reconcileRunning =
+    true;
 
-const round =  
-  snap.val();  
+  try {
 
-if (!round) {  
+    const snap =
+      await roundRef.once(
+        "value"
+      );
 
-  await createNewRound(  
-    "reconcile no global round"  
-  );  
+    const round =
+      snap.val();
 
-  return;  
-}  
+    if (!round) {
 
-const id =  
-  String(  
-    round.round_id || "0"  
-  );  
+      await createNewRound(
+        "reconcile no global round"
+      );
 
-const status =  
-  String(  
-    round.status || ""  
-  ).toLowerCase();  
+      return;
 
-const now =  
-  Date.now();  
+    }
 
-if (  
-  status === "waiting"  
-) {  
+    const id =
+      String(
+        round.round_id || "0"
+      );
 
-  const revealAt =  
-    Number(  
-      round.reveal_at || 0  
-    );  
+    const status =
+      String(
+        round.status || ""
+      ).toLowerCase();
 
-  if (!revealAt) {  
+    const now =
+      Date.now();
 
-    await createNewRound(  
-      "invalid global reveal time"  
-    );  
+    if (
+      status === "waiting"
+    ) {
 
-    return;  
-  }  
+      const revealAt =
+        Number(
+          round.reveal_at || 0
+        );
 
-  if (  
-    !potDisplayTimer  
-  ) {  
+      if (!revealAt) {
 
-    startPotDisplay(  
-      id  
-    );  
-  }  
+        await createNewRound(
+          "invalid global reveal time"
+        );
 
-  if (  
-    now >= revealAt  
-  ) {  
+        return;
 
-    await revealRound(  
-      id  
-    );  
-  }  
+      }
 
-  return;  
-}  
+      if (
+        !potDisplayTimer
+      ) {
 
-if (  
-  status === "reveal"  
-) {  
+        startPotDisplay(
+          id
+        );
 
-  stopPotDisplay();  
+      }
 
-  const revealedAt =  
-    Number(  
-      round.revealed_at || 0  
-    );  
+      if (
+        now >= revealAt
+      ) {
 
-  if (!revealedAt) {  
+        await revealRound(
+          id
+        );
 
-    await roundRef.update({  
-      revealed_at: now  
-    });  
+      }
 
-    return;  
-  }  
+      return;
 
-  if (  
-    now >=  
-    revealedAt +  
-    REVEAL_TIME  
-  ) {  
+    }
 
-    await createNewRound(  
-      "reconcile reveal finished"  
-    );  
-  }  
+    if (
+      status === "reveal"
+    ) {
 
-  return;  
-}  
+      stopPotDisplay();
 
-stopPotDisplay();  
+      const revealedAt =
+        Number(
+          round.revealed_at || 0
+        );
 
-await createNewRound(  
-  "unknown global status"  
-);
+      if (!revealedAt) {
 
-} catch (e) {
+        await roundRef.update({
 
-console.error(  
-  "RECONCILE ERROR",  
-  e  
-);
+          revealed_at:
+            now
 
-} finally {
+        });
 
-reconcileRunning =  
-  false;
+        return;
 
-}
+      }
+
+      if (
+        now >=
+        revealedAt +
+        REVEAL_TIME
+      ) {
+
+        await createNewRound(
+          "reconcile reveal finished"
+        );
+
+      }
+
+      return;
+
+    }
+
+    stopPotDisplay();
+
+    await createNewRound(
+      "unknown global status"
+    );
+
+  } catch (e) {
+
+    console.error(
+      "RECONCILE ERROR",
+      e
+    );
+
+  } finally {
+
+    reconcileRunning =
+      false;
+
+  }
+
 }
 
 /* =========================================================
-STARTUP
+STARTUP / RESUME
 ========================================================= */
 
 async function resumeExistingRound() {
 
-const snap =
-await roundRef.once(
-"value"
-);
+  const snap =
+    await roundRef.once(
+      "value"
+    );
 
-const round =
-snap.val();
+  const round =
+    snap.val();
 
-if (!round) {
+  if (!round) {
 
-await createNewRound(  
-  "startup no global round"  
-);  
+    await createNewRound(
+      "startup no global round"
+    );
 
-return;
+    return;
 
-}
+  }
 
-const id =
-String(
-round.round_id || "0"
-);
+  const id =
+    String(
+      round.round_id || "0"
+    );
 
-const status =
-String(
-round.status || ""
-).toLowerCase();
+  const status =
+    String(
+      round.status || ""
+    ).toLowerCase();
 
-const now =
-Date.now();
+  const now =
+    Date.now();
 
-const revealAt =
-Number(
-round.reveal_at || 0
-);
+  const revealAt =
+    Number(
+      round.reveal_at || 0
+    );
 
-if (
-status === "waiting" &&
-revealAt > now
-) {
+  if (
+    status === "waiting" &&
+    revealAt > now
+  ) {
 
-startPotDisplay(id);  
+    startPotDisplay(
+      id
+    );
 
-await updateTop3Demand(  
-  id  
-);  
+    await updateTop3Demand(
+      id
+    );
 
-scheduleReveal(  
-  id,  
-  revealAt  
-);  
+    scheduleReveal(
+      id,
+      revealAt
+    );
 
-return;
+    return;
 
-}
+  }
 
-if (
-status === "waiting"
-) {
+  if (
+    status === "waiting"
+  ) {
 
-await revealRound(  
-  id  
-);  
+    await revealRound(
+      id
+    );
 
-return;
+    return;
 
-}
+  }
 
-if (
-status === "reveal"
-) {
+  if (
+    status === "reveal"
+  ) {
 
-stopPotDisplay();  
+    stopPotDisplay();
 
-const revealedAt =  
-  Number(  
-    round.revealed_at ||  
-    now  
-  );  
+    const revealedAt =
+      Number(
+        round.revealed_at ||
+        now
+      );
 
-if (  
-  revealedAt +  
-  REVEAL_TIME >  
-  now  
-) {  
+    if (
+      revealedAt +
+        REVEAL_TIME >
+      now
+    ) {
 
-  scheduleNextRoundAfterReveal(  
-    id,  
-    revealedAt  
-  );  
+      scheduleNextRoundAfterReveal(
+        id,
+        revealedAt
+      );
 
-} else {  
+    } else {
 
-  await createNewRound(  
-    "startup reveal expired"  
-  );  
-}  
+      await createNewRound(
+        "startup reveal expired"
+      );
 
-return;
+    }
 
-}
+    return;
 
-await createNewRound(
-"startup unknown status"
-);
+  }
+
+  await createNewRound(
+    "startup unknown status"
+  );
+
 }
 
 /* =========================================================
-HTTP
+HTTP ROOT
 ========================================================= */
 
 app.get(
-"/",
-(req, res) => {
+  "/",
+  (req, res) => {
 
-res.json({  
+    res.json({
 
-  ok: true,  
+      ok:
+        true,
 
-  server:  
-    "Teen Patti Global Server",  
+      server:
+        "Teen Patti Global Server",
 
-  game_path:  
-    "teen_patti_global",  
+      game_path:
+        "teen_patti_global",
 
-  waiting_seconds:  
-    WAITING_TIME / 1000,  
+      waiting_seconds:
+        WAITING_TIME / 1000,
 
-  reveal_seconds:  
-    REVEAL_TIME / 1000,  
+      reveal_seconds:
+        REVEAL_TIME / 1000,
 
-  global_game:  
-    true,  
+      global_game:
+        true,
 
-  same_round_for_all_rooms:  
-    true,  
+      same_round_for_all_rooms:
+        true,
 
-  same_server_countdown:  
-    true,  
+      same_server_countdown:
+        true,
 
-  server_generated_cards:  
-    true,  
+      server_generated_cards:
+        true,
 
-  server_generated_winner:  
-    true,  
+      server_generated_winner:
+        true,
 
-  current_round_user_demand:  
-    true,  
+      current_round_user_demand:
+        true,
 
-  top3:  
-    true,  
+      top3:
+        true,
 
-  profile_name_photo:  
-    true,  
+      profile_name_photo:
+        true,
 
-  random_pot_display:  
-    true,  
+      random_pot_display:
+        true,
 
-  random_pot_interval_seconds:  
-    1,  
+      random_pot_interval_seconds:
+        1,
 
-  random_pot_display_only:  
-    true,  
+      random_pot_display_only:
+        true,
 
-  online_users:  
-    true,  
+      online_users:
+        true,
 
-  online_user_count:  
-    true,  
+      online_user_count:
+        true,
 
-  online_preview_photos:  
-    3  
-});
+      online_preview_photos:
+        3,
 
-}
+      record_history:
+        true
+
+    });
+
+  }
 );
 
 /* =========================================================
@@ -3058,101 +3481,117 @@ HEALTH
 ========================================================= */
 
 app.get(
-"/health",
-async (req, res) => {
+  "/health",
+  async (req, res) => {
 
-try {  
+    try {
 
-  const snap =  
-    await roundRef.once(  
-      "value"  
-    );  
+      const snap =
+        await roundRef.once(
+          "value"
+        );
 
-  const round =  
-    snap.val();  
+      const round =
+        snap.val();
 
-  const potSnap =  
-    await potDisplayRef.once(  
-      "value"  
-    );  
+      const potSnap =
+        await potDisplayRef.once(
+          "value"
+        );
 
-  const potDisplay =  
-    potSnap.val();  
+      const potDisplay =
+        potSnap.val();
 
-  const topSnap =  
-    await top3Ref.once(  
-      "value"  
-    );  
+      const topSnap =
+        await top3Ref.once(
+          "value"
+        );
 
-  const top3 =  
-    topSnap.val();  
+      const top3 =
+        topSnap.val();
 
-  const onlineSnap =  
-    await onlineStatsRef.once(  
-      "value"  
-    );  
+      const onlineSnap =
+        await onlineStatsRef.once(
+          "value"
+        );
 
-  const onlineStats =  
-    onlineSnap.val();  
+      const onlineStats =
+        onlineSnap.val();
 
-  res.json({  
+      const recordsSnap =
+        await recordsRef
+          .limitToLast(5)
+          .once("value");
 
-    ok: true,  
+      const records =
+        recordsSnap.val() || {};
 
-    game_path:  
-      "teen_patti_global",  
+      res.json({
 
-    round_id:  
-      round?.round_id ||  
-      null,  
+        ok:
+          true,
 
-    round_status:  
-      round?.status ||  
-      null,  
+        game_path:
+          "teen_patti_global",
 
-    started_at:  
-      round?.started_at ||  
-      null,  
+        round_id:
+          round?.round_id ||
+          null,
 
-    reveal_at:  
-      round?.reveal_at ||  
-      null,  
+        round_status:
+          round?.status ||
+          null,
 
-    actual_pot:  
-      round?.pot ||  
-      null,  
+        started_at:
+          round?.started_at ||
+          null,
 
-    pot_display:  
-      potDisplay ||  
-      null,  
+        reveal_at:
+          round?.reveal_at ||
+          null,
 
-    top3:  
-      top3 ||  
-      null,  
+        actual_pot:
+          round?.pot ||
+          null,
 
-    online:  
-      onlineStats ||  
-      null,  
+        pot_display:
+          potDisplay ||
+          null,
 
-    pot_display_running:  
-      !!potDisplayTimer,  
+        top3:
+          top3 ||
+          null,
 
-    server_timestamp:  
-      Date.now()  
-  });  
+        online:
+          onlineStats ||
+          null,
 
-} catch (e) {  
+        records:
+          records,
 
-  res.status(500).json({  
+        pot_display_running:
+          !!potDisplayTimer,
 
-    ok: false,  
+        server_timestamp:
+          Date.now()
 
-    error:  
-      e.message  
-  });  
-}
+      });
 
-}
+    } catch (e) {
+
+      res.status(500).json({
+
+        ok:
+          false,
+
+        error:
+          e.message
+
+      });
+
+    }
+
+  }
 );
 
 /* =========================================================
@@ -3160,37 +3599,42 @@ ONLINE API
 ========================================================= */
 
 app.get(
-"/online",
-async (req, res) => {
+  "/online",
+  async (req, res) => {
 
-try {  
+    try {
 
-  const stats =  
-    await updateOnlineStats();  
+      const stats =
+        await updateOnlineStats();
 
-  res.json({  
+      res.json({
 
-    ok: true,  
+        ok:
+          true,
 
-    game_path:  
-      "teen_patti_global",  
+        game_path:
+          "teen_patti_global",
 
-    online:  
-      stats  
-  });  
+        online:
+          stats
 
-} catch (e) {  
+      });
 
-  res.status(500).json({  
+    } catch (e) {
 
-    ok: false,  
+      res.status(500).json({
 
-    error:  
-      e.message  
-  });  
-}
+        ok:
+          false,
 
-}
+        error:
+          e.message
+
+      });
+
+    }
+
+  }
 );
 
 /* =========================================================
@@ -3198,54 +3642,121 @@ ROUND API
 ========================================================= */
 
 app.get(
-"/round",
-async (req, res) => {
+  "/round",
+  async (req, res) => {
 
-try {  
+    try {
 
-  const snap =  
-    await roundRef.once(  
-      "value"  
-    );  
+      const snap =
+        await roundRef.once(
+          "value"
+        );
 
-  const round =  
-    snap.val();  
+      const round =
+        snap.val();
 
-  if (!round) {  
+      if (!round) {
 
-    return res.status(  
-      404  
-    ).json({  
+        return res
+          .status(404)
+          .json({
 
-      ok: false,  
+            ok:
+              false,
 
-      error:  
-        "No global round found"  
-    });  
-  }  
+            error:
+              "No global round found"
 
-  res.json({  
+          });
 
-    ok: true,  
+      }
 
-    game_path:  
-      "teen_patti_global",  
+      res.json({
 
-    round  
-  });  
+        ok:
+          true,
 
-} catch (e) {  
+        game_path:
+          "teen_patti_global",
 
-  res.status(500).json({  
+        round
 
-    ok: false,  
+      });
 
-    error:  
-      e.message  
-  });  
-}
+    } catch (e) {
 
-}
+      res.status(500).json({
+
+        ok:
+          false,
+
+        error:
+          e.message
+
+      });
+
+    }
+
+  }
+);
+
+/* =========================================================
+RECORD API
+========================================================= */
+
+app.get(
+  "/records",
+  async (req, res) => {
+
+    try {
+
+      const snap =
+        await recordsRef
+          .limitToLast(50)
+          .once("value");
+
+      const data =
+        snap.val() || {};
+
+      const records =
+        Object.values(data)
+          .sort(
+            (a, b) =>
+              Number(
+                b.round_id || 0
+              ) -
+              Number(
+                a.round_id || 0
+              )
+          );
+
+      res.json({
+
+        ok:
+          true,
+
+        game_path:
+          "teen_patti_global",
+
+        records
+
+      });
+
+    } catch (e) {
+
+      res.status(500).json({
+
+        ok:
+          false,
+
+        error:
+          e.message
+
+      });
+
+    }
+
+  }
 );
 
 /* =========================================================
@@ -3253,70 +3764,81 @@ START ROUND
 ========================================================= */
 
 app.post(
-"/start-round",
-async (req, res) => {
+  "/start-round",
+  async (req, res) => {
 
-if (  
-  req.headers[  
-    "x-admin-secret"  
-  ] !==  
-  process.env.ADMIN_SECRET  
-) {  
+    if (
+      req.headers[
+        "x-admin-secret"
+      ] !==
+      process.env.ADMIN_SECRET
+    ) {
 
-  return res.status(  
-    401  
-  ).json({  
+      return res
+        .status(401)
+        .json({
 
-    ok: false,  
+          ok:
+            false,
 
-    error:  
-      "Unauthorized"  
-  });  
-}  
+          error:
+            "Unauthorized"
 
-try {  
+        });
 
-  const result =  
-    await createNewRound(  
-      "admin global start"  
-    );  
+    }
 
-  if (!result) {  
+    try {
 
-    return res.status(  
-      409  
-    ).json({  
+      const result =
+        await createNewRound(
+          "admin global start"
+        );
 
-      ok: false,  
+      if (!result) {
 
-      error:  
-        "Round operation already running"  
-    });  
-  }  
+        return res
+          .status(409)
+          .json({
 
-  res.json({  
+            ok:
+              false,
 
-    ok: true,  
+            error:
+              "Round operation already running"
 
-    message:  
-      "New global round created",  
+          });
 
-    round:  
-      result  
-  });  
+      }
 
-} catch (e) {  
+      res.json({
 
-  res.status(500).json({  
+        ok:
+          true,
 
-    ok: false,  
+        message:
+          "New global round created",
 
-    error:  
-      e.message  
-  });  
-}
+        round:
+          result
 
-}
+      });
+
+    } catch (e) {
+
+      res.status(500).json({
+
+        ok:
+          false,
+
+        error:
+          e.message
+
+      });
+
+    }
+
+  }
 );
 
 /* =========================================================
@@ -3324,19 +3846,21 @@ try {
 ========================================================= */
 
 app.use(
-(req, res) => {
+  (req, res) => {
 
-res.status(  
-  404  
-).json({  
+    res
+      .status(404)
+      .json({
 
-  ok: false,  
+        ok:
+          false,
 
-  error:  
-    "Endpoint not found"  
-});
+        error:
+          "Endpoint not found"
 
-}
+      });
+
+  }
 );
 
 /* =========================================================
@@ -3344,184 +3868,201 @@ EXPRESS ERROR
 ========================================================= */
 
 app.use(
-(err, req, res, next) => {
+  (err, req, res, next) => {
 
-console.error(  
-  "EXPRESS ERROR",  
-  err  
-);  
+    console.error(
+      "EXPRESS ERROR",
+      err
+    );
 
-if (  
-  res.headersSent  
-) {  
-  return next(err);  
-}  
+    if (
+      res.headersSent
+    ) {
 
-res.status(  
-  500  
-).json({  
+      return next(err);
 
-  ok: false,  
+    }
 
-  error:  
-    "Internal server error"  
-});
+    res
+      .status(500)
+      .json({
 
-}
+        ok:
+          false,
+
+        error:
+          "Internal server error"
+
+      });
+
+  }
 );
 
 /* =========================================================
-START
+START SERVER
 ========================================================= */
 
 const server =
-app.listen(
-PORT,
-"0.0.0.0",
-async () => {
+  app.listen(
+    PORT,
+    "0.0.0.0",
+    async () => {
 
-console.log(  
-    "TEEN PATTI GLOBAL SERVER STARTED",  
-    {  
-      PORT,  
-      GAME_PATH:  
-        "teen_patti_global"  
-    }  
-  );  
+      console.log(
+        "TEEN PATTI GLOBAL SERVER STARTED",
+        {
 
-  console.log(  
-    "GLOBAL ROUND: ENABLED"  
-  );  
+          PORT,
 
-  console.log(  
-    "GLOBAL COUNTDOWN: ENABLED"  
-  );  
+          GAME_PATH:
+            "teen_patti_global"
 
-  console.log(  
-    "CURRENT ROUND USER DEMAND: ENABLED"  
-  );  
+        }
+      );
 
-  console.log(  
-    "TOP 3: ENABLED"  
-  );  
+      console.log(
+        "GLOBAL ROUND: ENABLED"
+      );
 
-  console.log(  
-    "NAME + PHOTO: ENABLED"  
-  );  
+      console.log(
+        "GLOBAL COUNTDOWN: ENABLED"
+      );
 
-  console.log(  
-    "RANDOM POT DISPLAY: ENABLED"  
-  );  
+      console.log(
+        "CURRENT ROUND USER DEMAND: ENABLED"
+      );
 
-  console.log(  
-    "SERVER WINNER: ENABLED"  
-  );  
+      console.log(
+        "TOP 3: ENABLED"
+      );
 
-  console.log(  
-    "ONLINE USERS: ENABLED"  
-  );  
+      console.log(
+        "NAME + PHOTO: ENABLED"
+      );
 
-  console.log(  
-    "ONLINE COUNT: ENABLED"  
-  );  
+      console.log(
+        "RANDOM POT DISPLAY: ENABLED"
+      );
 
-  console.log(  
-    "ONLINE PREVIEW PHOTOS: 3"  
-  );  
+      console.log(
+        "SERVER WINNER: ENABLED"
+      );
 
-  try {  
+      console.log(
+        "ONLINE USERS: ENABLED"
+      );
 
-    await resumeExistingRound();  
+      console.log(
+        "ONLINE COUNT: ENABLED"
+      );
 
-    await updateOnlineStats();  
+      console.log(
+        "ONLINE PREVIEW PHOTOS: 3"
+      );
 
-  } catch (e) {  
+      console.log(
+        "RECORD HISTORY: ENABLED"
+      );
 
-    console.error(  
-      "STARTUP ERROR",  
-      e  
-    );  
-  }  
+      try {
 
-  setInterval(  
-    () => {  
+        await resumeExistingRound();
 
-      reconcileRound()  
-        .catch((e) => {  
+        await updateOnlineStats();
 
-          console.error(  
-            "RECONCILER ERROR",  
-            e  
-          );  
-        });  
+      } catch (e) {
 
-    },  
-    RECONCILE_INTERVAL  
-  );  
+        console.error(
+          "STARTUP ERROR",
+          e
+        );
 
-  onlineCleanupTimer =  
-    setInterval(  
-      () => {  
+      }
 
-        cleanupOfflineUsers()  
-          .catch((e) => {  
+      setInterval(
+        () => {
 
-            console.error(  
-              "ONLINE CLEANUP TIMER ERROR",  
-              e  
-            );  
-          });  
+          reconcileRound()
+            .catch((e) => {
 
-      },  
-      ONLINE_CLEANUP_INTERVAL  
-    );  
-}
+              console.error(
+                "RECONCILER ERROR",
+                e
+              );
 
-);
+            });
+
+        },
+        RECONCILE_INTERVAL
+      );
+
+      onlineCleanupTimer =
+        setInterval(
+          () => {
+
+            cleanupOfflineUsers()
+              .catch((e) => {
+
+                console.error(
+                  "ONLINE CLEANUP TIMER ERROR",
+                  e
+                );
+
+              });
+
+          },
+          ONLINE_CLEANUP_INTERVAL
+        );
+
+    }
+  );
 
 /* =========================================================
 SHUTDOWN
 ========================================================= */
 
 async function shutdown(
-signal
+  signal
 ) {
 
-console.log(
-signal +
-" RECEIVED"
-);
+  console.log(
+    signal +
+    " RECEIVED"
+  );
 
-stopPotDisplay();
+  stopPotDisplay();
 
-if (
-onlineCleanupTimer
-) {
+  if (
+    onlineCleanupTimer
+  ) {
 
-clearInterval(  
-  onlineCleanupTimer  
-);  
+    clearInterval(
+      onlineCleanupTimer
+    );
 
-onlineCleanupTimer =  
-  null;
+    onlineCleanupTimer =
+      null;
 
-}
+  }
 
-server.close(
-() => {
-process.exit(0);
-}
-);
+  server.close(
+    () => {
+
+      process.exit(0);
+
+    }
+  );
+
 }
 
 process.on(
-"SIGTERM",
-() =>
-shutdown("SIGTERM")
+  "SIGTERM",
+  () =>
+    shutdown("SIGTERM")
 );
 
 process.on(
-"SIGINT",
-() =>
-shutdown("SIGINT")
+  "SIGINT",
+  () =>
+    shutdown("SIGINT")
 );
